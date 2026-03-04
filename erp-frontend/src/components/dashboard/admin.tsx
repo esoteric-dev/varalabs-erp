@@ -6,8 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DashboardNavbar } from './common/navbar'
 import { ProfileCard } from './common/profile-card'
 import { MenuCard } from './common/menu-card'
-import { fetchCurrentUser } from '../../lib/queries/user'
-import { fetchReportSummary, type ReportSummary } from '../../lib/queries/reports'
+import { fetchReportSummary } from '../../lib/queries/reports'
 
 interface AdminDashboardProps {
   tenantId: string
