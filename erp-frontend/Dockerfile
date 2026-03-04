@@ -1,5 +1,5 @@
 # Use Bun official image as the base for building
-FROM oven/bun:1 as builder
+FROM oven/bun:1 AS builder
 
 WORKDIR /app
 

@@ -7,6 +7,7 @@ import { DashboardNavbar } from './common/navbar'
 import { ProfileCard } from './common/profile-card'
 import { MenuCard } from './common/menu-card'
 import { fetchReportSummary } from '../../lib/queries/reports'
+import { fetchCurrentUser } from '../../lib/queries/user'
 
 interface AdminDashboardProps {
   tenantId: string
