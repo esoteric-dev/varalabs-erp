@@ -22,8 +22,8 @@ let orgSlug: string | null = null
 if (parts.length >= 2 && parts[parts.length - 1] === 'localhost') {
   // *.localhost (local dev)
   orgSlug = parts[0]
-} else if (parts.length > 2 && parts[0] !== 'www') {
-  // *.domain.tld (production)
+} else if (parts.length > 2 && parts[0] !== 'www' && parts[0] !== 'app' && !host.endsWith('.azurewebsites.net')) {
+  // *.domain.tld (production, skip platform hostnames and app subdomain)
   orgSlug = parts[0]
 }
 

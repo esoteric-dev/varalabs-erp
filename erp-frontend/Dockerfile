@@ -12,6 +12,10 @@ RUN bun install --frozen-lockfile
 # Copy the rest of the source code
 COPY . .
 
+# Set the GraphQL API endpoint for the Vite build
+ARG VITE_GRAPHQL_ENDPOINT
+ENV VITE_GRAPHQL_ENDPOINT=${VITE_GRAPHQL_ENDPOINT}
+
 # Build the Vite React application
 RUN bun run build
 

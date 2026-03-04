@@ -45,6 +45,8 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }},${{ env.REGISTRY_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:latest
           file: ./erp-frontend/Dockerfile
+          build-args: |
+            VITE_GRAPHQL_ENDPOINT=http://api.varalabs.dev:8080/graphql
 
   deploy:
     runs-on: ubuntu-latest

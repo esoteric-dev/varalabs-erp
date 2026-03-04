@@ -80,9 +80,15 @@ jobs:
             # Login to Github Container Registry
             echo "${{ secrets.GH_PAT_FOR_VM }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+            # Create/Update the .env file from GitHub secrets
+            cat > .env << 'ENVFILE'
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            BIND_ADDR=0.0.0.0:8080
+            ENVFILE
+
             # Create/Update the docker-compose file
-            cat << 'COMPOSE' > docker-compose.yml
-            version: '3.8'
+            cat > docker-compose.yml << 'COMPOSE'
             services:
               app-gateway:
                 image: ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
