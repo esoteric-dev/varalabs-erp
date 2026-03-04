@@ -22,7 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-.github
 deployment
 app-gateway/target
 erp-frontend/node_modules
