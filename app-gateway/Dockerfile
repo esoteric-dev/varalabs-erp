@@ -1,5 +1,5 @@
 # Build Stage
-FROM clux/muslrust:stable as builder
+FROM clux/muslrust:stable AS builder
 
 WORKDIR /app
 
@@ -12,20 +12,18 @@ COPY Cargo.toml Cargo.lock ./
 
 # Cache cargo dependencies (This pulls all packages ahead of time)
 RUN cargo build --release --target x86_64-unknown-linux-musl || true
-RUN rm src/*.rs
+RUN rm -rf src target/x86_64-unknown-linux-musl/release/app-gateway target/x86_64-unknown-linux-musl/release/deps/app_gateway-*
 
 # Step 2: Build actual source code
 COPY ./src ./src
 COPY ./migrations ./migrations
 
 # Build the final binary in release mode
-RUN rustup target add x86_64-unknown-linux-musl
 RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # ---
 # Production Serving Stage
-# We're using a scratch or alpine container since rust compiles to statically linked binary
-FROM alpine:3.18 as runtime
+FROM alpine:3.18 AS runtime
 
 # Install CA certificates to enable outgoing HTTPS requests, and tzdata for timezone accuracy
 RUN apk add --no-cache ca-certificates tzdata
