@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: erp-frontend-app
+  AZURE_WEBAPP_NAME: myerp-synapse
   REGISTRY_LOGIN_SERVER: ghcr.io
 
 jobs:
