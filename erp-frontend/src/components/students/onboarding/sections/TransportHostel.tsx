@@ -1,4 +1,4 @@
-import { AddStudentInput } from '../../../../lib/queries/students'
+import type { AddStudentInput } from '../../../../lib/queries/students'
 
 interface Props {
   data: Partial<AddStudentInput>
@@ -6,7 +6,7 @@ interface Props {
   config: { enabled: boolean; mandatoryFields: string[] }
 }
 
-export default function TransportHostel({ data, updateData, config }: Props) {
+export default function TransportHostel(_props: Props) {
   // We do not have explicit fields for this in backend yet, so we could store it in customData if necessary,
   // or it can act as a placeholder. Let's comment this out or leave it empty so we don't break the build.
   return (

@@ -1,5 +1,7 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { getOnboardingConfig, StudentOnboardingConfig } from '../../../lib/queries/students'
+import { createContext, useContext, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import { getOnboardingConfig } from '../../../lib/queries/students'
+import type { StudentOnboardingConfig } from '../../../lib/queries/students'
 
 export const defaultOnboardingConfig: StudentOnboardingConfig = {
   sections: {

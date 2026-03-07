@@ -8,7 +8,8 @@ import TransportHostel from './sections/TransportHostel'
 import MedicalHistory from './sections/MedicalHistory'
 import PreviousSchool from './sections/PreviousSchool'
 import OtherDetails from './sections/OtherDetails'
-import { AddStudentInput, addStudent } from '../../../lib/queries/students'
+import { addStudent } from '../../../lib/queries/students'
+import type { AddStudentInput } from '../../../lib/queries/students'
 import { RefreshCw, Copy, Check } from 'lucide-react'
 
 export default function StudentOnboarding() {

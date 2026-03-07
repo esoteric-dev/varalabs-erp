@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, IndianRupee } from 'lucide-react'
+import { TrendingUp, TrendingDown } from 'lucide-react'
 import type { ReportSummary } from '../../../lib/queries/reports'
 
 interface EarningsSummaryProps {

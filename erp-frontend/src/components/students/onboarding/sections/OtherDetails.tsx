@@ -1,4 +1,4 @@
-import { AddStudentInput } from '../../../../lib/queries/students'
+import type { AddStudentInput } from '../../../../lib/queries/students'
 
 interface CustomField {
   id: string
