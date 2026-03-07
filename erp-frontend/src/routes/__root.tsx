@@ -1,6 +1,15 @@
+import React from 'react'
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router'
-import { TanStackRouterDevtools } from '@tanstack/router-devtools'
 import type { QueryClient } from '@tanstack/react-query'
+
+const TanStackRouterDevtools =
+  import.meta.env.PROD
+    ? () => null
+    : React.lazy(() =>
+        import('@tanstack/router-devtools').then((res) => ({
+          default: res.TanStackRouterDevtools,
+        })),
+      )
 
 export type UserRole = 'superadmin' | 'tenant_admin' | 'user'
 
@@ -19,7 +28,9 @@ function RootComponent() {
     <>
       {/* TODO: Insert Figma Component Here */}
       <Outlet />
-      <TanStackRouterDevtools />
+      <React.Suspense>
+        <TanStackRouterDevtools />
+      </React.Suspense>
     </>
   )
 }

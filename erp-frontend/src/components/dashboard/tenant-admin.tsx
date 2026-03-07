@@ -763,7 +763,7 @@ function AnalyticsTab({ org }: { org: Organisation }) {
   const { data: summary, isLoading, dataUpdatedAt } = useQuery<OrgReportSummary>({
     queryKey: ['orgReportSummary', org.id],
     queryFn: () => fetchOrgReportSummary(org.id),
-    refetchInterval: 30_000,
+    staleTime: 5 * 60_000,
   })
 
   const queryClient = useQueryClient()

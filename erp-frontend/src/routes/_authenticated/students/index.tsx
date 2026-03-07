@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Search, Plus, X } from 'lucide-react'
-import { fetchStudents, createStudent } from '../../../lib/queries/students'
+import { Search, Plus, Copy, Check, KeyRound, UserPlus, X } from 'lucide-react'
+import { fetchStudents, createStudentCredentials } from '../../../lib/queries/students'
+import { resetUserPassword } from '../../../lib/queries/user'
 import type { Student } from '../../../lib/queries/students'
 
 export const Route = createFileRoute('/_authenticated/students/')({
@@ -11,23 +12,46 @@ export const Route = createFileRoute('/_authenticated/students/')({
 
 function StudentDirectory() {
   const queryClient = useQueryClient()
-  const [showForm, setShowForm] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newClassName, setNewClassName] = useState('')
-
   const { data: students = [], isLoading } = useQuery<Student[]>({
     queryKey: ['students'],
     queryFn: fetchStudents,
   })
+  const [copiedField, setCopiedField] = useState<string | null>(null)
+  const [credentialsCard, setCredentialsCard] = useState<{ label: string; name: string; email: string; password: string } | null>(null)
 
-  const mutation = useMutation({
-    mutationFn: ({ name, className }: { name: string; className: string }) =>
-      createStudent(name, className),
-    onSuccess: () => {
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedField(field)
+    setTimeout(() => setCopiedField(null), 2000)
+  }
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: ({ userId }: { userId: string }) =>
+      resetUserPassword(userId),
+    onSuccess: (data, variables) => {
+      if (data.generatedPassword) {
+        const student = students.find(s => s.userId === variables.userId)
+        setCredentialsCard({
+          label: 'Password Reset',
+          name: student?.name || '',
+          email: student?.loginEmail || '',
+          password: data.generatedPassword,
+        })
+      }
+    },
+  })
+
+  const createCredentialsMutation = useMutation({
+    mutationFn: ({ studentId }: { studentId: string }) =>
+      createStudentCredentials(studentId),
+    onSuccess: (data) => {
+      setCredentialsCard({
+        label: 'Credentials Created',
+        name: data.student.name,
+        email: data.generatedEmail,
+        password: data.generatedPassword,
+      })
       queryClient.invalidateQueries({ queryKey: ['students'] })
-      setShowForm(false)
-      setNewName('')
-      setNewClassName('')
     },
   })
 
@@ -38,64 +62,53 @@ function StudentDirectory() {
           <h2 className="text-2xl font-bold text-gray-900">Student Directory</h2>
           <p className="text-sm text-gray-500 mt-0.5">Manage and view all enrolled students</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
+        <Link
+          to="/students/add-student"
           className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
           Add Student
-        </button>
+        </Link>
       </div>
 
-      {/* Add Student Form */}
-      {showForm && (
-        <div className="bg-white rounded-xl border border-gray-100 p-5 mb-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-800">Add New Student</h3>
-            <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600">
+      {/* Credentials Card */}
+      {credentialsCard && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-amber-800 mb-1">{credentialsCard.label} — {credentialsCard.name}</h3>
+              <p className="text-xs text-amber-600 mb-3">Save these credentials. The password will not be shown again.</p>
+            </div>
+            <button onClick={() => setCredentialsCard(null)} className="text-amber-400 hover:text-amber-600">
               <X className="w-4 h-4" />
             </button>
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              mutation.mutate({ name: newName, className: newClassName })
-            }}
-            className="flex items-end gap-3"
-          >
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Student name"
-                required
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="bg-white rounded-lg border border-amber-100 px-4 py-3">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Login Email</div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-mono text-gray-800">{credentialsCard.email}</span>
+                <button
+                  onClick={() => copyToClipboard(credentialsCard.email, 'reset-email')}
+                  className="text-gray-400 hover:text-teal-600 transition-colors"
+                >
+                  {copiedField === 'reset-email' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Class</label>
-              <input
-                value={newClassName}
-                onChange={(e) => setNewClassName(e.target.value)}
-                placeholder="e.g. 10-A"
-                required
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-              />
+            <div className="bg-white rounded-lg border border-amber-100 px-4 py-3">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Password</div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-mono text-gray-800">{credentialsCard.password}</span>
+                <button
+                  onClick={() => copyToClipboard(credentialsCard.password, 'reset-pw')}
+                  className="text-gray-400 hover:text-teal-600 transition-colors"
+                >
+                  {copiedField === 'reset-pw' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
-            <button
-              type="submit"
-              disabled={mutation.isPending}
-              className="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
-            >
-              {mutation.isPending ? 'Adding...' : 'Add'}
-            </button>
-          </form>
-          {mutation.isError && (
-            <p className="mt-2 text-xs text-red-600">
-              {(mutation.error as Error).message || 'Failed to create student'}
-            </p>
-          )}
+          </div>
         </div>
       )}
 
@@ -122,7 +135,9 @@ function StudentDirectory() {
               <tr>
                 <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Student</th>
                 <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Class</th>
-                <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider"></th>
+                <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Adm. No.</th>
+                <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Login Email</th>
+                <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -141,14 +156,54 @@ function StudentDirectory() {
                     </Link>
                   </td>
                   <td className="px-5 py-3.5 text-sm text-gray-600">{s.className}</td>
+                  <td className="px-5 py-3.5 text-sm text-gray-500 font-mono">{s.admissionNumber || '-'}</td>
                   <td className="px-5 py-3.5">
-                    <Link
-                      to="/students/$studentId"
-                      params={{ studentId: s.id }}
-                      className="text-xs text-teal-600 hover:underline font-medium"
-                    >
-                      View
-                    </Link>
+                    {s.loginEmail ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm text-gray-600 font-mono">{s.loginEmail}</span>
+                        <button
+                          onClick={() => copyToClipboard(s.loginEmail!, `email-${s.id}`)}
+                          className="text-gray-400 hover:text-teal-600 transition-colors"
+                          title="Copy email"
+                        >
+                          {copiedField === `email-${s.id}` ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">No account</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to="/students/$studentId"
+                        params={{ studentId: s.id }}
+                        className="text-xs text-teal-600 hover:underline font-medium"
+                      >
+                        View
+                      </Link>
+                      {s.userId ? (
+                        <button
+                          onClick={() => resetPasswordMutation.mutate({ userId: s.userId! })}
+                          disabled={resetPasswordMutation.isPending}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded hover:bg-amber-100 transition-colors disabled:opacity-50"
+                          title="Reset password"
+                        >
+                          <KeyRound className="w-3 h-3" />
+                          Reset
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => createCredentialsMutation.mutate({ studentId: s.id })}
+                          disabled={createCredentialsMutation.isPending}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded hover:bg-teal-100 transition-colors disabled:opacity-50"
+                          title="Create credentials"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                          Create Credentials
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

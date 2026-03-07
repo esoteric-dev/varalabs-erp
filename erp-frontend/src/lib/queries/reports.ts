@@ -10,6 +10,21 @@ export interface ReportSummary {
   feesPending: number
   pendingAdmissions: number
   activeNotices: number
+  activeStudents: number
+  inactiveStudents: number
+  totalTeachers: number
+  activeTeachers: number
+  inactiveTeachers: number
+  activeStaff: number
+  inactiveStaff: number
+  totalSubjects: number
+  activeSubjects: number
+  inactiveSubjects: number
+  feesFine: number
+  feesOutstanding: number
+  attendanceTodayLate: number
+  totalEarnings: number
+  totalExpenses: number
 }
 
 const REPORT_SUMMARY_QUERY = gql`
@@ -23,6 +38,21 @@ const REPORT_SUMMARY_QUERY = gql`
       feesPending
       pendingAdmissions
       activeNotices
+      activeStudents
+      inactiveStudents
+      totalTeachers
+      activeTeachers
+      inactiveTeachers
+      activeStaff
+      inactiveStaff
+      totalSubjects
+      activeSubjects
+      inactiveSubjects
+      feesFine
+      feesOutstanding
+      attendanceTodayLate
+      totalEarnings
+      totalExpenses
     }
   }
 `

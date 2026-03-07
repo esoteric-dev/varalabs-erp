@@ -35,8 +35,9 @@ function LoginPage() {
     setLoading(true)
 
     try {
-      const { token } = await loginUser(email, password, orgSlug)
+      const { token, refreshToken } = await loginUser(email, password, orgSlug)
       localStorage.setItem('authToken', token)
+      localStorage.setItem('refreshToken', refreshToken)
       window.location.href = '/'
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')

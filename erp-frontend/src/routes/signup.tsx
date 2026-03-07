@@ -33,6 +33,7 @@ function SignupPage() {
     try {
       const result = await signupUser(name, email, password)
       localStorage.setItem('authToken', result.token)
+      localStorage.setItem('refreshToken', result.refreshToken)
       // Full page reload so the router re-initializes with authStatus = 'authenticated'
       window.location.href = '/'
     } catch (err) {

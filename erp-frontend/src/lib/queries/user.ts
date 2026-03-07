@@ -21,13 +21,20 @@ export interface OrgRole {
 
 interface LoginResponse {
   token: string
+  refreshToken: string
   user: CurrentUser
 }
 
 export interface SignupResponse {
   token: string
+  refreshToken: string
   user: CurrentUser
   tenantId: string
+}
+
+export interface RefreshTokenResponse {
+  token: string
+  refreshToken: string
 }
 
 export interface CreateOrgResponse {
@@ -99,6 +106,7 @@ export const LOGIN_MUTATION = gql`
   mutation Login($email: String!, $password: String!, $orgSlug: String) {
     login(email: $email, password: $password, orgSlug: $orgSlug) {
       token
+      refreshToken
       user {
         id
         name
@@ -122,6 +130,7 @@ export const SIGNUP_MUTATION = gql`
       password: $password
     ) {
       token
+      refreshToken
       user {
         id
         name
@@ -130,6 +139,15 @@ export const SIGNUP_MUTATION = gql`
         phone
       }
       tenantId
+    }
+  }
+`
+
+export const REFRESH_TOKEN_MUTATION = gql`
+  mutation RefreshToken($refreshToken: String!, $orgSlug: String) {
+    refreshToken(refreshToken: $refreshToken, orgSlug: $orgSlug) {
+      token
+      refreshToken
     }
   }
 `
@@ -256,6 +274,15 @@ export const RESET_ORG_ADMIN_PASSWORD_MUTATION = gql`
   }
 `
 
+export const RESET_USER_PASSWORD_MUTATION = gql`
+  mutation ResetUserPassword($userId: String!, $newPassword: String) {
+    resetUserPassword(userId: $userId, newPassword: $newPassword) {
+      success
+      generatedPassword
+    }
+  }
+`
+
 // --------------- Fetch Functions ---------------
 
 export async function fetchCurrentUser(): Promise<CurrentUser> {
@@ -274,6 +301,20 @@ export async function loginUser(
     orgSlug: orgSlug ?? null,
   })
   return data.login
+}
+
+export async function refreshAccessToken(
+  refreshToken: string,
+  orgSlug?: string | null,
+): Promise<RefreshTokenResponse> {
+  const data = await gqlClient.request<{ refreshToken: RefreshTokenResponse }>(
+    REFRESH_TOKEN_MUTATION,
+    {
+      refreshToken,
+      orgSlug: orgSlug ?? null,
+    },
+  )
+  return data.refreshToken
 }
 
 export async function signupUser(
@@ -378,4 +419,15 @@ export async function resetOrgAdminPassword(
     { userId, newPassword: newPassword ?? null },
   )
   return data.resetOrgAdminPassword
+}
+
+export async function resetUserPassword(
+  userId: string,
+  newPassword?: string,
+): Promise<ResetPasswordResponse> {
+  const data = await gqlClient.request<{ resetUserPassword: ResetPasswordResponse }>(
+    RESET_USER_PASSWORD_MUTATION,
+    { userId, newPassword: newPassword ?? null },
+  )
+  return data.resetUserPassword
 }

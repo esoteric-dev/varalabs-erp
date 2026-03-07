@@ -5,6 +5,84 @@ export interface Student {
   id: string
   name: string
   className: string
+  gender?: string
+  dateOfBirth?: string
+  bloodGroup?: string
+  religion?: string
+  email?: string
+  phone?: string
+  admissionNumber?: string
+  admissionDate?: string
+  loginEmail?: string
+  userId?: string
+}
+
+export interface AddStudentResult {
+  student: Student
+  generatedEmail: string
+  generatedPassword: string
+}
+
+export interface StudentOnboardingConfig {
+  sections: {
+    personalInfo: { enabled: boolean; mandatoryFields: string[] }
+    parentsGuardian: { enabled: boolean; mandatoryFields: string[] }
+    addressInfo: { enabled: boolean; mandatoryFields: string[] }
+    transportHostel: { enabled: boolean; mandatoryFields: string[] }
+    medicalHistory: { enabled: boolean; mandatoryFields: string[] }
+    previousSchool: { enabled: boolean; mandatoryFields: string[] }
+    otherDetails: { enabled: boolean; customFields: Array<{ id: string; label: string; type: string; required: boolean }> }
+  }
+}
+
+export interface OrgSettings {
+  studentOnboardingConfig: StudentOnboardingConfig
+}
+
+export interface AddStudentInput {
+  name: string
+  className: string
+  gender?: string
+  dateOfBirth?: string
+  bloodGroup?: string
+  religion?: string
+  email?: string
+  phone?: string
+  admissionNumber?: string
+  admissionDate?: string
+
+  fatherName?: string
+  fatherPhone?: string
+  fatherOccupation?: string
+  motherName?: string
+  motherPhone?: string
+  motherOccupation?: string
+  guardianName?: string
+  guardianPhone?: string
+  guardianRelation?: string
+  guardianOccupation?: string
+  guardianEmail?: string
+
+  allergies?: string
+  medications?: string
+  pastConditions?: string
+
+  previousSchoolName?: string
+  previousSchoolAddress?: string
+
+  currentAddress?: string
+  currentCity?: string
+  currentState?: string
+  currentZipCode?: string
+  currentCountry?: string
+
+  permanentAddress?: string
+  permanentCity?: string
+  permanentState?: string
+  permanentZipCode?: string
+  permanentCountry?: string
+
+  customData?: any
 }
 
 const STUDENTS_QUERY = gql`
@@ -13,6 +91,9 @@ const STUDENTS_QUERY = gql`
       id
       name
       className
+      admissionNumber
+      loginEmail
+      userId
     }
   }
 `
@@ -23,6 +104,16 @@ const STUDENT_QUERY = gql`
       id
       name
       className
+      gender
+      dateOfBirth
+      bloodGroup
+      religion
+      email
+      phone
+      admissionNumber
+      admissionDate
+      loginEmail
+      userId
     }
   }
 `
@@ -68,4 +159,91 @@ export async function createStudent(name: string, className: string): Promise<St
     { name, className },
   )
   return data.createStudent
+}
+
+export const GET_ONBOARDING_CONFIG = gql`
+  query GetOnboardingConfig {
+    getOnboardingConfig {
+      studentOnboardingConfig
+    }
+  }
+`
+
+export const UPDATE_ONBOARDING_CONFIG = gql`
+  mutation UpdateOnboardingConfig($config: JSON!) {
+    updateOnboardingConfig(config: $config)
+  }
+`
+
+export const ADD_STUDENT_MUTATION = gql`
+  mutation AddStudent($input: AddStudentInput!) {
+    addStudent(input: $input) {
+      student {
+        id
+        name
+        className
+        gender
+        dateOfBirth
+        bloodGroup
+        religion
+        email
+        phone
+        admissionNumber
+        admissionDate
+      }
+      generatedEmail
+      generatedPassword
+    }
+  }
+`
+
+export async function getOnboardingConfig(): Promise<StudentOnboardingConfig> {
+  const data = await gqlClient.request<{ getOnboardingConfig: OrgSettings }>(GET_ONBOARDING_CONFIG)
+  return data.getOnboardingConfig.studentOnboardingConfig
+}
+
+export async function updateOnboardingConfig(config: StudentOnboardingConfig): Promise<boolean> {
+  const data = await gqlClient.request<{ updateOnboardingConfig: boolean }>(UPDATE_ONBOARDING_CONFIG, { config })
+  return data.updateOnboardingConfig
+}
+
+export async function addStudent(input: AddStudentInput): Promise<AddStudentResult> {
+  const data = await gqlClient.request<{ addStudent: AddStudentResult }>(ADD_STUDENT_MUTATION, { input })
+  return data.addStudent
+}
+
+const NEXT_ADMISSION_NUMBER_QUERY = gql`
+  query NextAdmissionNumber {
+    nextAdmissionNumber
+  }
+`
+
+export async function fetchNextAdmissionNumber(): Promise<string> {
+  const data = await gqlClient.request<{ nextAdmissionNumber: string }>(NEXT_ADMISSION_NUMBER_QUERY)
+  return data.nextAdmissionNumber
+}
+
+const CREATE_STUDENT_CREDENTIALS_MUTATION = gql`
+  mutation CreateStudentCredentials($studentId: String!) {
+    createStudentCredentials(studentId: $studentId) {
+      student {
+        id
+        name
+        className
+        admissionNumber
+        loginEmail
+        userId
+      }
+      generatedEmail
+      generatedPassword
+    }
+  }
+`
+
+export async function createStudentCredentials(studentId: string): Promise<AddStudentResult> {
+  const data = await gqlClient.request<{ createStudentCredentials: AddStudentResult }>(
+    CREATE_STUDENT_CREDENTIALS_MUTATION,
+    { studentId },
+  )
+  return data.createStudentCredentials
 }

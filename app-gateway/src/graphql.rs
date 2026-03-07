@@ -6,7 +6,9 @@ use rand::Rng;
 use sqlx::PgPool;
 use std::env;
 
-use crate::auth::{require_auth, require_permission, require_permission_for_org, Claims, SystemRole};
+use crate::auth::{
+    require_auth, require_permission, require_permission_for_org, Claims, RefreshClaims, SystemRole, UserContext,
+};
 use crate::db::execute_in_context;
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -16,6 +18,109 @@ pub struct Student {
     pub id: String,
     pub name: String,
     pub class_name: String,
+    pub gender: Option<String>,
+    pub date_of_birth: Option<String>,
+    pub blood_group: Option<String>,
+    pub religion: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub admission_number: Option<String>,
+    pub admission_date: Option<String>,
+    pub login_email: Option<String>,
+    pub user_id: Option<String>,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct StudentParent {
+    pub father_name: Option<String>,
+    pub father_phone: Option<String>,
+    pub father_occupation: Option<String>,
+    pub mother_name: Option<String>,
+    pub mother_phone: Option<String>,
+    pub mother_occupation: Option<String>,
+    pub guardian_name: Option<String>,
+    pub guardian_phone: Option<String>,
+    pub guardian_relation: Option<String>,
+    pub guardian_occupation: Option<String>,
+    pub guardian_email: Option<String>,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct StudentAddress {
+    pub id: String,
+    pub address_type: String,
+    pub address: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub zip_code: Option<String>,
+    pub country: Option<String>,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct StudentMedicalHistory {
+    pub allergies: Option<String>,
+    pub medications: Option<String>,
+    pub past_conditions: Option<String>,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct StudentPreviousSchool {
+    pub id: String,
+    pub school_name: String,
+    pub address: Option<String>,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct OrgSettings {
+    pub student_onboarding_config: async_graphql::types::Json<serde_json::Value>,
+}
+
+#[derive(Debug, InputObject)]
+pub struct AddStudentInput {
+    pub name: String,
+    pub class_name: String,
+    pub gender: Option<String>,
+    pub date_of_birth: Option<String>,
+    pub blood_group: Option<String>,
+    pub religion: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub admission_number: Option<String>,
+    pub admission_date: Option<String>,
+
+    // Nested forms
+    pub father_name: Option<String>,
+    pub father_phone: Option<String>,
+    pub father_occupation: Option<String>,
+    pub mother_name: Option<String>,
+    pub mother_phone: Option<String>,
+    pub mother_occupation: Option<String>,
+    pub guardian_name: Option<String>,
+    pub guardian_phone: Option<String>,
+    pub guardian_relation: Option<String>,
+    pub guardian_occupation: Option<String>,
+    pub guardian_email: Option<String>,
+
+    pub allergies: Option<String>,
+    pub medications: Option<String>,
+    pub past_conditions: Option<String>,
+
+    pub previous_school_name: Option<String>,
+    pub previous_school_address: Option<String>,
+
+    pub current_address: Option<String>,
+    pub current_city: Option<String>,
+    pub current_state: Option<String>,
+    pub current_zip_code: Option<String>,
+    pub current_country: Option<String>,
+
+    pub permanent_address: Option<String>,
+    pub permanent_city: Option<String>,
+    pub permanent_state: Option<String>,
+    pub permanent_zip_code: Option<String>,
+    pub permanent_country: Option<String>,
+
+    pub custom_data: Option<async_graphql::types::Json<serde_json::Value>>,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
@@ -112,6 +217,7 @@ impl Role {
 #[derive(Debug, SimpleObject)]
 pub struct LoginResponse {
     pub token: String,
+    pub refresh_token: String,
     pub user: User,
 }
 
@@ -237,6 +343,166 @@ pub struct ReportSummary {
     pub fees_pending: i64,
     pub pending_admissions: i64,
     pub active_notices: i64,
+    // Extended fields for dashboard parity
+    pub active_students: i64,
+    pub inactive_students: i64,
+    pub total_teachers: i64,
+    pub active_teachers: i64,
+    pub inactive_teachers: i64,
+    pub active_staff: i64,
+    pub inactive_staff: i64,
+    pub total_subjects: i64,
+    pub active_subjects: i64,
+    pub inactive_subjects: i64,
+    pub fees_fine: i64,
+    pub fees_outstanding: i64,
+    pub attendance_today_late: i64,
+    pub total_earnings: i64,
+    pub total_expenses: i64,
+}
+
+// ── Dashboard Feature Types ─────────────────────────────────────────────────
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct Event {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub event_date: String,
+    pub end_date: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+}
+
+#[derive(Debug, InputObject)]
+pub struct CreateEventInput {
+    pub title: String,
+    pub description: Option<String>,
+    pub event_date: String,
+    pub end_date: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct Subject {
+    pub id: String,
+    pub name: String,
+    pub class_name: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, InputObject)]
+pub struct CreateSubjectInput {
+    pub name: String,
+    pub class_name: Option<String>,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct StudentActivity {
+    pub id: String,
+    pub student_id: Option<String>,
+    pub title: String,
+    pub description: Option<String>,
+    pub activity_date: String,
+}
+
+#[derive(Debug, InputObject)]
+pub struct CreateStudentActivityInput {
+    pub student_id: Option<String>,
+    pub title: String,
+    pub description: Option<String>,
+    pub activity_date: Option<String>,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct AdminTodo {
+    pub id: String,
+    pub title: String,
+    pub due_time: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, InputObject)]
+pub struct CreateAdminTodoInput {
+    pub title: String,
+    pub due_time: Option<String>,
+}
+
+#[derive(Debug, InputObject)]
+pub struct UpdateAdminTodoInput {
+    pub id: String,
+    pub status: String,
+}
+
+// ── Dashboard V2 Types ──────────────────────────────────────────────────────
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct AttendanceSummary {
+    pub student_present: i64,
+    pub student_absent: i64,
+    pub student_late: i64,
+    pub student_total: i64,
+    pub teacher_present: i64,
+    pub teacher_absent: i64,
+    pub teacher_late: i64,
+    pub teacher_total: i64,
+    pub staff_present: i64,
+    pub staff_absent: i64,
+    pub staff_late: i64,
+    pub staff_total: i64,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct ClassRoutine {
+    pub id: String,
+    pub teacher_id: String,
+    pub teacher_name: String,
+    pub class_name: String,
+    pub section: Option<String>,
+    pub day_of_week: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub room: Option<String>,
+    pub subject_name: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, InputObject)]
+pub struct CreateClassRoutineInput {
+    pub teacher_id: String,
+    pub class_name: String,
+    pub section: Option<String>,
+    pub day_of_week: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub room: Option<String>,
+    pub subject_name: Option<String>,
+}
+
+#[derive(Debug, SimpleObject)]
+pub struct ClassPerformance {
+    pub class_name: String,
+    pub top_count: i64,
+    pub average_count: i64,
+    pub below_average_count: i64,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct BestPerformer {
+    pub user_id: String,
+    pub name: String,
+    pub role: String,
+    pub class_name: Option<String>,
+    pub metric_label: String,
+    pub metric_value: String,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct SubjectProgress {
+    pub subject_name: String,
+    pub class_name: Option<String>,
+    pub student_count: i64,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
@@ -310,8 +576,15 @@ struct OrgTenantRow {
 #[derive(Debug, SimpleObject)]
 pub struct SignupResponse {
     pub token: String,
+    pub refresh_token: String,
     pub user: User,
     pub tenant_id: String,
+}
+
+#[derive(Debug, SimpleObject)]
+pub struct RefreshTokenResponse {
+    pub token: String,
+    pub refresh_token: String,
 }
 
 #[derive(Debug, SimpleObject)]
@@ -331,6 +604,13 @@ pub struct CreateUserResponse {
 pub struct ResetPasswordResponse {
     pub success: bool,
     pub generated_password: Option<String>,
+}
+
+#[derive(Debug, SimpleObject)]
+pub struct AddStudentResponse {
+    pub student: Student,
+    pub generated_email: String,
+    pub generated_password: String,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
@@ -478,7 +758,7 @@ impl QueryRoot {
         let students = execute_in_context(pool, &tenant_id, &org_id, |conn| {
             Box::pin(async move {
                 let rows = sqlx::query_as::<_, Student>(
-                    "SELECT id::text, name, class_name FROM students",
+                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text FROM students s LEFT JOIN users u ON u.id = s.user_id",
                 )
                 .fetch_all(conn)
                 .await?;
@@ -491,6 +771,47 @@ impl QueryRoot {
         Ok(students)
     }
 
+    /// Get the organisation's student onboarding configuration.
+    async fn get_onboarding_config(&self, ctx: &Context<'_>) -> Result<OrgSettings> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        tracing::info!(
+            tenant_id = %tenant_id,
+            org_id = %org_id,
+            "GraphQL query: get_onboarding_config"
+        );
+
+        let inner_org = org_id.clone();
+        let config: Option<serde_json::Value> = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let row: Option<serde_json::Value> = sqlx::query_scalar(
+                    "SELECT student_onboarding_config FROM organisation_settings WHERE organisation_id = $1::uuid",
+                )
+                .bind(&inner_org)
+                .fetch_optional(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching onboarding config: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        let student_onboarding_config = async_graphql::types::Json(
+            config.unwrap_or_else(|| serde_json::json!({}))
+        );
+
+        Ok(OrgSettings {
+            student_onboarding_config
+        })
+    }
+
     /// Fetch a single student by ID.
     async fn student(&self, ctx: &Context<'_>, id: String) -> Result<Option<Student>> {
         let user_ctx = require_permission(ctx, "students.view")?;
@@ -501,7 +822,7 @@ impl QueryRoot {
         let student = execute_in_context(pool, &tenant_id, &org_id, |conn| {
             Box::pin(async move {
                 let row = sqlx::query_as::<_, Student>(
-                    "SELECT id::text, name, class_name FROM students WHERE id = $1::uuid",
+                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
                 )
                 .bind(&id)
                 .fetch_optional(conn)
@@ -526,7 +847,7 @@ impl QueryRoot {
         let student = execute_in_context(pool, &tenant_id, &org_id, |conn| {
             Box::pin(async move {
                 let row = sqlx::query_as::<_, Student>(
-                    "SELECT id::text, name, class_name FROM students WHERE user_id = $1::uuid",
+                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.user_id = $1::uuid",
                 )
                 .bind(&uid)
                 .fetch_optional(conn)
@@ -538,6 +859,27 @@ impl QueryRoot {
         .map_err(|e| e.extend())?;
 
         Ok(student)
+    }
+
+    /// Peek at the next admission number without consuming the sequence.
+    async fn next_admission_number(&self, ctx: &Context<'_>) -> Result<String> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let year = chrono::Utc::now().format("%Y").to_string();
+        let current_seq: Option<i32> = sqlx::query_scalar(
+            "SELECT admission_seq FROM organisation_settings WHERE organisation_id = $1::uuid",
+        )
+        .bind(&user_ctx.org_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error peeking admission seq: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        let next_seq = current_seq.unwrap_or(0) + 1;
+        Ok(format!("ADM-{}-{:04}", year, next_seq))
     }
 
     /// List all tenants. Superadmin only.
@@ -1119,7 +1461,30 @@ impl QueryRoot {
                         (SELECT COALESCE(SUM(amount_paid), 0) FROM fee_records WHERE status = 'paid')::bigint AS fees_collected,
                         (SELECT COALESCE(SUM(amount_due - amount_paid), 0) FROM fee_records WHERE status IN ('pending','partial','overdue'))::bigint AS fees_pending,
                         (SELECT COUNT(*) FROM admission_applications WHERE status IN ('submitted','under_review'))::bigint AS pending_admissions,
-                        (SELECT COUNT(*) FROM notices WHERE published = true)::bigint AS active_notices",
+                        (SELECT COUNT(*) FROM notices WHERE published = true)::bigint AS active_notices,
+                        -- Extended counts
+                        (SELECT COUNT(*) FROM students)::bigint AS active_students,
+                        0::bigint AS inactive_students,
+                        (SELECT COUNT(DISTINCT uo.user_id) FROM user_organisations uo
+                         JOIN users u ON u.id = uo.user_id
+                         WHERE uo.organisation_id = current_setting('app.current_org', true)::uuid
+                         AND u.system_role = 'teacher')::bigint AS total_teachers,
+                        (SELECT COUNT(DISTINCT uo.user_id) FROM user_organisations uo
+                         JOIN users u ON u.id = uo.user_id
+                         WHERE uo.organisation_id = current_setting('app.current_org', true)::uuid
+                         AND u.system_role = 'teacher')::bigint AS active_teachers,
+                        0::bigint AS inactive_teachers,
+                        (SELECT COUNT(DISTINCT uo.user_id) FROM user_organisations uo
+                         WHERE uo.organisation_id = current_setting('app.current_org', true)::uuid)::bigint AS active_staff,
+                        0::bigint AS inactive_staff,
+                        (SELECT COUNT(*) FROM subjects)::bigint AS total_subjects,
+                        (SELECT COUNT(*) FROM subjects WHERE status = 'active')::bigint AS active_subjects,
+                        (SELECT COUNT(*) FROM subjects WHERE status = 'inactive')::bigint AS inactive_subjects,
+                        0::bigint AS fees_fine,
+                        (SELECT COALESCE(SUM(amount_due), 0) FROM fee_records WHERE status IN ('pending','partial','overdue'))::bigint AS fees_outstanding,
+                        (SELECT COUNT(*) FROM attendance_records WHERE date = CURRENT_DATE AND status = 'late')::bigint AS attendance_today_late,
+                        (SELECT COALESCE(SUM(amount_paid), 0) FROM fee_records WHERE status = 'paid')::bigint AS total_earnings,
+                        COALESCE((SELECT SUM(pe.net_pay)::bigint FROM payroll_entries pe JOIN payroll_runs pr ON pr.id = pe.payroll_run_id WHERE pr.status = 'processed'), 0)::bigint AS total_expenses",
                 )
                 .fetch_one(conn)
                 .await?;
@@ -1637,6 +2002,384 @@ impl QueryRoot {
 
         Ok(user)
     }
+
+    // ── Dashboard Queries ────────────────────────────────────────────────────
+
+    async fn events(&self, ctx: &Context<'_>) -> Result<Vec<Event>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let rows = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let rows = sqlx::query_as::<_, Event>(
+                    "SELECT id::text, title, description, event_date::text, end_date::text, start_time, end_time
+                     FROM events ORDER BY event_date ASC LIMIT 20",
+                )
+                .fetch_all(conn)
+                .await?;
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(rows)
+    }
+
+    async fn subjects(&self, ctx: &Context<'_>) -> Result<Vec<Subject>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let rows = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let rows = sqlx::query_as::<_, Subject>(
+                    "SELECT id::text, name, class_name, status FROM subjects ORDER BY name",
+                )
+                .fetch_all(conn)
+                .await?;
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(rows)
+    }
+
+    async fn student_activities(&self, ctx: &Context<'_>) -> Result<Vec<StudentActivity>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let rows = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let rows = sqlx::query_as::<_, StudentActivity>(
+                    "SELECT id::text, student_id::text, title, description, activity_date::text
+                     FROM student_activities ORDER BY activity_date DESC LIMIT 10",
+                )
+                .fetch_all(conn)
+                .await?;
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(rows)
+    }
+
+    async fn admin_todos(&self, ctx: &Context<'_>) -> Result<Vec<AdminTodo>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let rows = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let rows = sqlx::query_as::<_, AdminTodo>(
+                    "SELECT id::text, title, due_time, status FROM admin_todos ORDER BY created_at DESC LIMIT 20",
+                )
+                .fetch_all(conn)
+                .await?;
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(rows)
+    }
+
+    async fn get_classes(&self, ctx: &Context<'_>) -> Result<Vec<String>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let inner_org = org_id.clone();
+
+        let classes_json: Option<serde_json::Value> = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let row: Option<serde_json::Value> = sqlx::query_scalar(
+                    "SELECT classes FROM organisation_settings WHERE organisation_id = $1::uuid",
+                )
+                .bind(&inner_org)
+                .fetch_optional(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        let classes: Vec<String> = classes_json
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        Ok(classes)
+    }
+
+    // ── Dashboard V2 Queries ────────────────────────────────────────────────
+
+    /// Get attendance breakdown by role (student/teacher/staff) with optional period filter.
+    async fn attendance_summary(
+        &self,
+        ctx: &Context<'_>,
+        period: Option<String>,
+    ) -> Result<AttendanceSummary> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let period_val = period.unwrap_or_else(|| "today".to_string());
+        let date_filter = match period_val.as_str() {
+            "this_week" => "date >= date_trunc('week', CURRENT_DATE) AND date <= CURRENT_DATE",
+            "last_week" => "date >= date_trunc('week', CURRENT_DATE) - interval '7 days' AND date < date_trunc('week', CURRENT_DATE)",
+            _ => "date = CURRENT_DATE",
+        };
+
+        let summary = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let df = date_filter.to_string();
+            Box::pin(async move {
+                let query = format!(
+                    "SELECT
+                        (SELECT COUNT(*) FROM attendance_records WHERE {df} AND status = 'present')::bigint AS student_present,
+                        (SELECT COUNT(*) FROM attendance_records WHERE {df} AND status = 'absent')::bigint AS student_absent,
+                        (SELECT COUNT(*) FROM attendance_records WHERE {df} AND status = 'late')::bigint AS student_late,
+                        (SELECT COUNT(*) FROM attendance_records WHERE {df})::bigint AS student_total,
+                        COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND sa.status = 'present' AND u.system_role = 'teacher'), 0)::bigint AS teacher_present,
+                        COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND sa.status = 'absent' AND u.system_role = 'teacher'), 0)::bigint AS teacher_absent,
+                        COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND sa.status = 'late' AND u.system_role = 'teacher'), 0)::bigint AS teacher_late,
+                        COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND u.system_role = 'teacher'), 0)::bigint AS teacher_total,
+                        COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND sa.status = 'present' AND u.system_role != 'teacher'), 0)::bigint AS staff_present,
+                        COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND sa.status = 'absent' AND u.system_role != 'teacher'), 0)::bigint AS staff_absent,
+                        COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND sa.status = 'late' AND u.system_role != 'teacher'), 0)::bigint AS staff_late,
+                        COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND u.system_role != 'teacher'), 0)::bigint AS staff_total",
+                    df = df
+                );
+                let row = sqlx::query_as::<_, AttendanceSummary>(&query)
+                    .fetch_one(conn)
+                    .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(summary)
+    }
+
+    /// Get class routines, optionally filtered by class name.
+    async fn class_routines(
+        &self,
+        ctx: &Context<'_>,
+        class_name: Option<String>,
+    ) -> Result<Vec<ClassRoutine>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let rows = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let cn = class_name.clone();
+            Box::pin(async move {
+                let rows = match cn {
+                    Some(ref c) => {
+                        sqlx::query_as::<_, ClassRoutine>(
+                            "SELECT cr.id::text, cr.teacher_id::text,
+                                    u.name AS teacher_name,
+                                    cr.class_name, cr.section, cr.day_of_week,
+                                    cr.start_time, cr.end_time, cr.room, cr.subject_name, cr.status
+                             FROM class_routines cr
+                             JOIN users u ON u.id = cr.teacher_id
+                             WHERE cr.class_name = $1
+                             ORDER BY cr.day_of_week, cr.start_time",
+                        )
+                        .bind(c)
+                        .fetch_all(conn)
+                        .await?
+                    }
+                    None => {
+                        sqlx::query_as::<_, ClassRoutine>(
+                            "SELECT cr.id::text, cr.teacher_id::text,
+                                    u.name AS teacher_name,
+                                    cr.class_name, cr.section, cr.day_of_week,
+                                    cr.start_time, cr.end_time, cr.room, cr.subject_name, cr.status
+                             FROM class_routines cr
+                             JOIN users u ON u.id = cr.teacher_id
+                             ORDER BY cr.day_of_week, cr.start_time
+                             LIMIT 20",
+                        )
+                        .fetch_all(conn)
+                        .await?
+                    }
+                };
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(rows)
+    }
+
+    /// Get performance aggregation for a class (top/average/below-average student counts).
+    async fn class_performance(
+        &self,
+        ctx: &Context<'_>,
+        class_name: Option<String>,
+    ) -> Result<ClassPerformance> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let cn = class_name.unwrap_or_else(|| "all".to_string());
+
+        let perf = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let class_val = cn.clone();
+            Box::pin(async move {
+                // Use attendance rate as a proxy for performance
+                // >90% = top, 60-90% = average, <60% = below average
+                let class_filter = if class_val == "all" {
+                    "1=1".to_string()
+                } else {
+                    format!("s.class_name = '{}'", class_val.replace('\'', "''"))
+                };
+
+                let query = format!(
+                    "WITH student_attendance AS (
+                        SELECT s.id,
+                               COUNT(CASE WHEN ar.status = 'present' THEN 1 END)::float AS present_days,
+                               GREATEST(COUNT(ar.id), 1)::float AS total_days
+                        FROM students s
+                        LEFT JOIN attendance_records ar ON ar.student_id = s.id
+                        WHERE {class_filter}
+                        GROUP BY s.id
+                    )
+                    SELECT
+                        COUNT(CASE WHEN present_days / total_days >= 0.9 THEN 1 END)::bigint AS top_count,
+                        COUNT(CASE WHEN present_days / total_days >= 0.6 AND present_days / total_days < 0.9 THEN 1 END)::bigint AS average_count,
+                        COUNT(CASE WHEN present_days / total_days < 0.6 THEN 1 END)::bigint AS below_average_count
+                    FROM student_attendance",
+                    class_filter = class_filter
+                );
+
+                #[derive(sqlx::FromRow)]
+                struct PerfRow {
+                    top_count: i64,
+                    average_count: i64,
+                    below_average_count: i64,
+                }
+
+                let row = sqlx::query_as::<_, PerfRow>(&query)
+                    .fetch_one(conn)
+                    .await?;
+                Ok(ClassPerformance {
+                    class_name: class_val,
+                    top_count: row.top_count,
+                    average_count: row.average_count,
+                    below_average_count: row.below_average_count,
+                })
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(perf)
+    }
+
+    /// Get top subjects with student count, optionally filtered by class.
+    async fn top_subjects(
+        &self,
+        ctx: &Context<'_>,
+        class_name: Option<String>,
+    ) -> Result<Vec<SubjectProgress>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let rows = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let cn = class_name.clone();
+            Box::pin(async move {
+                let rows = match cn {
+                    Some(ref c) => {
+                        sqlx::query_as::<_, SubjectProgress>(
+                            "SELECT s.name AS subject_name, s.class_name,
+                                    (SELECT COUNT(*) FROM students st WHERE st.class_name = s.class_name)::bigint AS student_count
+                             FROM subjects s
+                             WHERE s.status = 'active' AND s.class_name = $1
+                             ORDER BY student_count DESC
+                             LIMIT 7",
+                        )
+                        .bind(c)
+                        .fetch_all(conn)
+                        .await?
+                    }
+                    None => {
+                        sqlx::query_as::<_, SubjectProgress>(
+                            "SELECT s.name AS subject_name, s.class_name,
+                                    (SELECT COUNT(*) FROM students st WHERE st.class_name = s.class_name)::bigint AS student_count
+                             FROM subjects s
+                             WHERE s.status = 'active'
+                             ORDER BY student_count DESC
+                             LIMIT 7",
+                        )
+                        .fetch_all(conn)
+                        .await?
+                    }
+                };
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(rows)
+    }
+
+    /// Get best performers (top teacher and star students).
+    async fn best_performers(&self, ctx: &Context<'_>) -> Result<Vec<BestPerformer>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let performers = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let rows = sqlx::query_as::<_, BestPerformer>(
+                    "(SELECT u.id::text AS user_id, u.name, 'teacher' AS role,
+                            NULL::text AS class_name,
+                            'Most Active Teacher' AS metric_label,
+                            COUNT(cr.id)::text AS metric_value
+                     FROM users u
+                     JOIN class_routines cr ON cr.teacher_id = u.id
+                     WHERE u.system_role = 'teacher'
+                     GROUP BY u.id, u.name
+                     ORDER BY COUNT(cr.id) DESC
+                     LIMIT 1)
+                    UNION ALL
+                    (SELECT s.student_id::text AS user_id, st.name, 'student' AS role,
+                            st.class_name,
+                            'Highest Attendance' AS metric_label,
+                            ROUND(COUNT(CASE WHEN s.status = 'present' THEN 1 END)::numeric * 100 / GREATEST(COUNT(s.id), 1), 1)::text || '%' AS metric_value
+                     FROM attendance_records s
+                     JOIN students st ON st.id = s.student_id
+                     GROUP BY s.student_id, st.name, st.class_name
+                     ORDER BY COUNT(CASE WHEN s.status = 'present' THEN 1 END)::float / GREATEST(COUNT(s.id), 1) DESC
+                     LIMIT 1)",
+                )
+                .fetch_all(conn)
+                .await?;
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(performers)
+    }
 }
 
 // ── Mutation ─────────────────────────────────────────────────────────────────
@@ -1790,6 +2533,24 @@ impl MutationRoot {
         )
         .map_err(|e| async_graphql::Error::new(format!("Failed to create token: {e}")))?;
 
+        let refresh_exp = chrono::Utc::now()
+            .checked_add_signed(chrono::Duration::days(7))
+            .map(|t| t.timestamp() as usize)
+            .unwrap_or(0);
+
+        let refresh_claims = RefreshClaims {
+            sub: user_row.id.clone(),
+            token_type: "refresh".to_string(),
+            exp: refresh_exp,
+        };
+
+        let refresh_token = encode(
+            &Header::default(),
+            &refresh_claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .map_err(|e| async_graphql::Error::new(format!("Failed to create refresh token: {e}")))?;
+
         let user = User {
             id: user_row.id,
             name: user_row.name,
@@ -1798,7 +2559,11 @@ impl MutationRoot {
             phone: user_row.phone,
         };
 
-        Ok(LoginResponse { token, user })
+        Ok(LoginResponse {
+            token,
+            refresh_token,
+            user,
+        })
     }
 
     // ── Signup (public) ──────────────────────────────────────────────────────
@@ -1917,11 +2682,219 @@ impl MutationRoot {
         )
         .map_err(|e| async_graphql::Error::new(format!("Failed to create token: {e}")))?;
 
+        let refresh_exp = chrono::Utc::now()
+            .checked_add_signed(chrono::Duration::days(7))
+            .map(|t| t.timestamp() as usize)
+            .unwrap_or(0);
+
+        let refresh_claims = RefreshClaims {
+            sub: user.id.clone(),
+            token_type: "refresh".to_string(),
+            exp: refresh_exp,
+        };
+
+        let refresh_token = encode(
+            &Header::default(),
+            &refresh_claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .map_err(|e| async_graphql::Error::new(format!("Failed to create refresh token: {e}")))?;
+
         tracing::info!(user_id = %user.id, tenant_id = %tenant_id, "Signup completed (tenant created, no org yet)");
         Ok(SignupResponse {
             token,
+            refresh_token,
             user,
             tenant_id,
+        })
+    }
+
+    // ── Refresh Token ────────────────────────────────────────────────────────
+
+    /// Exchange a valid refresh token for a new access token and a new refresh token.
+    async fn refresh_token(
+        &self,
+        ctx: &Context<'_>,
+        refresh_token: String,
+        org_slug: Option<String>,
+    ) -> Result<RefreshTokenResponse> {
+        let pool = ctx.data::<PgPool>()?;
+
+        let secret = env::var("JWT_SECRET").unwrap_or_else(|_| "dev-secret".into());
+        let decoding_key = jsonwebtoken::DecodingKey::from_secret(secret.as_bytes());
+
+        // Decode and validate the refresh token
+        let token_data = jsonwebtoken::decode::<RefreshClaims>(
+            &refresh_token,
+            &decoding_key,
+            &jsonwebtoken::Validation::default(),
+        )
+        .map_err(|e| {
+            tracing::warn!("Failed to decode refresh token: {e}");
+            async_graphql::Error::new("Invalid or expired refresh token").extend_with(
+                |_, ext: &mut async_graphql::ErrorExtensionValues| {
+                    ext.set("code", "UNAUTHENTICATED");
+                },
+            )
+        })?;
+
+        let claims = token_data.claims;
+        if claims.token_type != "refresh" {
+            return Err(async_graphql::Error::new("Invalid token type").extend_with(
+                |_, ext: &mut async_graphql::ErrorExtensionValues| {
+                    ext.set("code", "UNAUTHENTICATED");
+                },
+            ));
+        }
+
+        let user_id = claims.sub;
+
+        // Fetch user from DB to ensure they still exist and get updated info
+        let user_row = sqlx::query_as::<_, UserWithPassword>(
+            "SELECT id::text, name, email, system_role, phone, password_hash FROM users WHERE id = $1::uuid",
+        )
+        .bind(&user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching user during refresh: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?
+        .ok_or_else(|| {
+            async_graphql::Error::new("User no longer exists").extend_with(
+                |_, ext: &mut async_graphql::ErrorExtensionValues| {
+                    ext.set("code", "UNAUTHENTICATED");
+                },
+            )
+        })?;
+
+        // Resolve org: exactly identical logic as in login
+        let org_tenant = if let Some(ref slug) = org_slug {
+            Some(
+                sqlx::query_as::<_, OrgTenantRow>(
+                    "SELECT uo.organisation_id::text AS org_id, o.tenant_id::text AS tenant_id
+                     FROM user_organisations uo
+                     JOIN organisations o ON o.id = uo.organisation_id
+                     WHERE uo.user_id = $1::uuid AND o.slug = $2
+                     LIMIT 1",
+                )
+                .bind(&user_row.id)
+                .bind(slug)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!("DB error fetching org by slug: {e}");
+                    async_graphql::Error::new("Internal server error")
+                })?
+                .ok_or_else(|| async_graphql::Error::new("You do not belong to this organisation"))?,
+            )
+        } else {
+            let email_slug = extract_slug_from_email(&user_row.email);
+            let from_email = if let Some(ref slug) = email_slug {
+                sqlx::query_as::<_, OrgTenantRow>(
+                    "SELECT uo.organisation_id::text AS org_id, o.tenant_id::text AS tenant_id
+                     FROM user_organisations uo
+                     JOIN organisations o ON o.id = uo.organisation_id
+                     WHERE uo.user_id = $1::uuid AND o.slug = $2
+                     LIMIT 1",
+                )
+                .bind(&user_row.id)
+                .bind(slug)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!("DB error fetching org by email slug: {e}");
+                    async_graphql::Error::new("Internal server error")
+                })?
+            } else {
+                None
+            };
+
+            match from_email {
+                Some(ot) => Some(ot),
+                None => {
+                    sqlx::query_as::<_, OrgTenantRow>(
+                        "SELECT uo.organisation_id::text AS org_id, o.tenant_id::text AS tenant_id
+                         FROM user_organisations uo
+                         JOIN organisations o ON o.id = uo.organisation_id
+                         WHERE uo.user_id = $1::uuid
+                         LIMIT 1",
+                    )
+                    .bind(&user_row.id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("DB error fetching org/tenant for user: {e}");
+                        async_graphql::Error::new("Internal server error")
+                    })?
+                }
+            }
+        };
+
+        let (final_org_id, final_tenant_id) = match org_tenant {
+            Some(ot) => (ot.org_id, ot.tenant_id),
+            None => {
+                let tid: Option<String> = sqlx::query_scalar(
+                    "SELECT tenant_id::text FROM users WHERE id = $1::uuid",
+                )
+                .bind(&user_row.id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!("DB error fetching user tenant_id: {e}");
+                    async_graphql::Error::new("Internal server error")
+                })?
+                .flatten();
+
+                (String::new(), tid.unwrap_or_default())
+            }
+        };
+
+        // Generate new access token
+        let access_exp = chrono::Utc::now()
+            .checked_add_signed(chrono::Duration::hours(24))
+            .map(|t| t.timestamp() as usize)
+            .unwrap_or(0);
+
+        let access_claims = Claims {
+            sub: user_row.id.clone(),
+            tenant_id: final_tenant_id,
+            org_id: final_org_id,
+            system_role: user_row.system_role.clone(),
+            exp: access_exp,
+        };
+
+        let new_access_token = jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &access_claims,
+            &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .map_err(|e| async_graphql::Error::new(format!("Failed to create token: {e}")))?;
+
+        // Generate new refresh token
+        let new_refresh_exp = chrono::Utc::now()
+            .checked_add_signed(chrono::Duration::days(7))
+            .map(|t| t.timestamp() as usize)
+            .unwrap_or(0);
+
+        let new_refresh_claims = RefreshClaims {
+            sub: user_row.id.clone(),
+            token_type: "refresh".to_string(),
+            exp: new_refresh_exp,
+        };
+
+        let new_refresh_token = jsonwebtoken::encode(
+            &jsonwebtoken::Header::default(),
+            &new_refresh_claims,
+            &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .map_err(|e| async_graphql::Error::new(format!("Failed to create refresh token: {e}")))?;
+
+        tracing::info!(user_id = %user_row.id, "Refresh token exchanged successfully");
+
+        Ok(RefreshTokenResponse {
+            token: new_access_token,
+            refresh_token: new_refresh_token,
         })
     }
 
@@ -2234,7 +3207,7 @@ impl MutationRoot {
                      VALUES (current_setting('app.current_org', true)::uuid,
                              current_setting('app.current_tenant', true)::uuid,
                              $1, $2)
-                     RETURNING id::text, name, class_name",
+                     RETURNING id::text, name, class_name, gender, date_of_birth::text, blood_group, religion, email, phone, admission_number, admission_date::text, NULL::text AS login_email, user_id::text",
                 )
                 .bind(&name)
                 .bind(&class_name)
@@ -3392,6 +4365,18 @@ impl MutationRoot {
 
         execute_in_context(pool, &tenant_id, &org_id, |conn| {
             Box::pin(async move {
+                // If marking as class teacher, first clear any existing class teacher
+                // assignment for this user (a teacher can only be class teacher of one class)
+                if is_ct {
+                    sqlx::query(
+                        "UPDATE teacher_class_assignments SET is_class_teacher = false
+                         WHERE user_id = $1::uuid AND is_class_teacher = true",
+                    )
+                    .bind(&user_id)
+                    .execute(&mut *conn)
+                    .await?;
+                }
+
                 sqlx::query(
                     "INSERT INTO teacher_class_assignments (organisation_id, tenant_id, user_id, class_name, is_class_teacher)
                      VALUES (current_setting('app.current_org', true)::uuid, current_setting('app.current_tenant', true)::uuid,
@@ -3522,6 +4507,1037 @@ impl MutationRoot {
             success: true,
             generated_password: generated_pw,
         })
+    }
+
+    /// Reset the password of any user in the caller's organisation.
+    async fn reset_user_password(
+        &self,
+        ctx: &Context<'_>,
+        user_id: String,
+        new_password: Option<String>,
+    ) -> Result<ResetPasswordResponse> {
+        let user_ctx = require_permission(ctx, "users.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let target_uuid = uuid::Uuid::parse_str(&user_id)
+            .map_err(|_| async_graphql::Error::new("Invalid user id"))?;
+
+        let org_uuid = uuid::Uuid::parse_str(&user_ctx.org_id)
+            .map_err(|_| async_graphql::Error::new("Invalid org id"))?;
+
+        // Verify target user belongs to caller's organisation
+        let belongs: bool = sqlx::query_scalar(
+            "SELECT EXISTS(
+                SELECT 1 FROM user_organisations WHERE user_id = $1 AND organisation_id = $2
+            )",
+        )
+        .bind(target_uuid)
+        .bind(org_uuid)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error checking user org: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        if !belongs {
+            return Err(async_graphql::Error::new(
+                "User does not belong to your organisation",
+            ));
+        }
+
+        let (hashed, generated_pw) = match new_password {
+            Some(ref p) if !p.is_empty() => {
+                if p.len() < 6 {
+                    return Err(async_graphql::Error::new(
+                        "Password must be at least 6 characters",
+                    ));
+                }
+                let h = bcrypt::hash(p, 12).map_err(|e| {
+                    async_graphql::Error::new(format!("Failed to hash password: {e}"))
+                })?;
+                (h, None)
+            }
+            _ => {
+                let pw = generate_random_password();
+                let h = bcrypt::hash(&pw, 12).map_err(|e| {
+                    async_graphql::Error::new(format!("Failed to hash password: {e}"))
+                })?;
+                (h, Some(pw))
+            }
+        };
+
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
+            .bind(&hashed)
+            .bind(target_uuid)
+            .execute(pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error resetting password: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+
+        tracing::info!(target_user = %user_id, "Reset user password (org admin)");
+        Ok(ResetPasswordResponse {
+            success: true,
+            generated_password: generated_pw,
+        })
+    }
+
+    /// Update the organisation's student onboarding configuration.
+    async fn update_onboarding_config(
+        &self,
+        ctx: &Context<'_>,
+        config: async_graphql::types::Json<serde_json::Value>,
+    ) -> Result<bool> {
+        let user_ctx = require_permission(ctx, "settings.update")?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let config_val = config.0.clone();
+
+        let inner_org = org_id.clone();
+        let inner_tenant = tenant_id.clone();
+        execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO organisation_settings (organisation_id, tenant_id, student_onboarding_config, updated_at)
+                     VALUES ($1::uuid, $2::uuid, $3, NOW())
+                     ON CONFLICT (organisation_id)
+                     DO UPDATE SET student_onboarding_config = $3, updated_at = NOW()",
+                )
+                .bind(&inner_org)
+                .bind(&inner_tenant)
+                .bind(&config_val)
+                .execute(conn)
+                .await?;
+                Ok(())
+            })
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error updating onboarding config: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        Ok(true)
+    }
+
+    /// Add a new student and their related onboarding information.
+    async fn add_student(
+        &self,
+        ctx: &Context<'_>,
+        input: AddStudentInput,
+    ) -> Result<AddStudentResponse> {
+        let user_ctx = require_permission(ctx, "students.create")?;
+        let pool = ctx.data::<PgPool>()?;
+
+        tracing::info!(
+            tenant_id = %user_ctx.tenant_id,
+            org_id = %user_ctx.org_id,
+            "GraphQL mutation: add_student"
+        );
+
+        let mut tx = pool.begin().await.map_err(|e| {
+            tracing::error!("DB transaction error: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // Set RLS context for the transaction
+        sqlx::query("SET LOCAL ROLE app_user")
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error setting role: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+        sqlx::query(&format!("SET LOCAL app.current_tenant = '{}'", user_ctx.tenant_id))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error setting tenant: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+        sqlx::query(&format!("SET LOCAL app.current_org = '{}'", user_ctx.org_id))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error setting org: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+
+        // Auto-generate admission number
+        let year = chrono::Utc::now().format("%Y").to_string();
+        let next_seq: i32 = sqlx::query_scalar(
+            "INSERT INTO organisation_settings (organisation_id, tenant_id, admission_seq)
+             VALUES ($1::uuid, $2::uuid, 1)
+             ON CONFLICT (organisation_id)
+             DO UPDATE SET admission_seq = organisation_settings.admission_seq + 1
+             RETURNING admission_seq",
+        )
+        .bind(&user_ctx.org_id)
+        .bind(&user_ctx.tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error getting admission seq: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+        let admission_number = format!("ADM-{}-{:04}", year, next_seq);
+
+        // 1. Insert Student Core
+        let student = sqlx::query_as::<_, Student>(
+            "INSERT INTO students (
+                organisation_id, tenant_id, name, class_name,
+                gender, date_of_birth, blood_group, religion,
+                email, phone, admission_number, admission_date
+            ) VALUES (
+                $1::uuid, $2::uuid, $3, $4,
+                $5, $6::date, $7, $8,
+                $9, $10, $11, $12::date
+            ) RETURNING id::text, name, class_name, gender, date_of_birth::text, blood_group, religion, email, phone, admission_number, admission_date::text, NULL::text AS login_email, NULL::text AS user_id"
+        )
+        .bind(&user_ctx.org_id)
+        .bind(&user_ctx.tenant_id)
+        .bind(&input.name)
+        .bind(&input.class_name)
+        .bind(&input.gender)
+        .bind(&input.date_of_birth)
+        .bind(&input.blood_group)
+        .bind(&input.religion)
+        .bind(&input.email)
+        .bind(&input.phone)
+        .bind(&admission_number)
+        .bind(&input.admission_date)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error inserting student: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // 1b. Create user account for the student
+        let org_slug: String = sqlx::query_scalar(
+            "SELECT slug FROM organisations WHERE id = $1::uuid",
+        )
+        .bind(&user_ctx.org_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching org slug: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        let student_email = format!("{}@{}.com", admission_number.to_lowercase(), org_slug);
+        let student_password = generate_random_password();
+        let student_pw_hash = bcrypt::hash(&student_password, 12).map_err(|e| {
+            async_graphql::Error::new(format!("Failed to hash password: {e}"))
+        })?;
+
+        let student_user_id: String = sqlx::query_scalar(
+            "INSERT INTO users (name, email, password_hash, system_role, tenant_id)
+             VALUES ($1, $2, $3, 'user', $4::uuid)
+             RETURNING id::text",
+        )
+        .bind(&input.name)
+        .bind(&student_email)
+        .bind(&student_pw_hash)
+        .bind(&user_ctx.tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error creating student user: {e}");
+            async_graphql::Error::new("Failed to create student user account")
+        })?;
+
+        // Link user to organisation
+        sqlx::query(
+            "INSERT INTO user_organisations (user_id, organisation_id)
+             VALUES ($1::uuid, $2::uuid)",
+        )
+        .bind(&student_user_id)
+        .bind(&user_ctx.org_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error linking student user to org: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // Assign student role
+        let student_role_id: Option<String> = sqlx::query_scalar(
+            "SELECT id::text FROM roles WHERE organisation_id = $1::uuid AND slug = 'student'",
+        )
+        .bind(&user_ctx.org_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error finding student role: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        if let Some(role_id) = student_role_id {
+            sqlx::query(
+                "INSERT INTO user_org_roles (user_id, organisation_id, role_id, assigned_by)
+                 VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid)
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(&student_user_id)
+            .bind(&user_ctx.org_id)
+            .bind(&role_id)
+            .bind(&user_ctx.user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error assigning student role: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+        } else {
+            tracing::warn!(org_id = %user_ctx.org_id, "No 'student' role found for org, skipping role assignment");
+        }
+
+        // Link student record to user account
+        sqlx::query(
+            "UPDATE students SET user_id = $1::uuid WHERE id = $2::uuid",
+        )
+        .bind(&student_user_id)
+        .bind(&student.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error linking student to user: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // 2. Insert Parent Data
+        sqlx::query(
+            "INSERT INTO student_parents (
+                student_id, tenant_id, organisation_id,
+                father_name, father_phone, father_occupation,
+                mother_name, mother_phone, mother_occupation,
+                guardian_name, guardian_phone, guardian_relation, guardian_occupation, guardian_email
+            ) VALUES (
+                $1::uuid, $2::uuid, $3::uuid,
+                $4, $5, $6,
+                $7, $8, $9,
+                $10, $11, $12, $13, $14
+            )"
+        )
+        .bind(&student.id)
+        .bind(&user_ctx.tenant_id)
+        .bind(&user_ctx.org_id)
+        .bind(&input.father_name)
+        .bind(&input.father_phone)
+        .bind(&input.father_occupation)
+        .bind(&input.mother_name)
+        .bind(&input.mother_phone)
+        .bind(&input.mother_occupation)
+        .bind(&input.guardian_name)
+        .bind(&input.guardian_phone)
+        .bind(&input.guardian_relation)
+        .bind(&input.guardian_occupation)
+        .bind(&input.guardian_email)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error inserting student_parents: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // 3. Insert Medical History
+        sqlx::query(
+            "INSERT INTO student_medical_history (
+                student_id, tenant_id, organisation_id,
+                allergies, medications, past_conditions
+            ) VALUES (
+                $1::uuid, $2::uuid, $3::uuid,
+                $4, $5, $6
+            )"
+        )
+        .bind(&student.id)
+        .bind(&user_ctx.tenant_id)
+        .bind(&user_ctx.org_id)
+        .bind(&input.allergies)
+        .bind(&input.medications)
+        .bind(&input.past_conditions)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error inserting student_medical_history: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // 4. Insert Previous School
+        if input.previous_school_name.is_some() || input.previous_school_address.is_some() {
+            sqlx::query(
+                "INSERT INTO student_previous_schools (
+                    student_id, tenant_id, organisation_id,
+                    school_name, address
+                ) VALUES (
+                    $1::uuid, $2::uuid, $3::uuid,
+                    $4, $5
+                )"
+            )
+            .bind(&student.id)
+            .bind(&user_ctx.tenant_id)
+            .bind(&user_ctx.org_id)
+            .bind(input.previous_school_name.unwrap_or_default())
+            .bind(&input.previous_school_address)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error inserting student_previous_schools: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+        }
+
+        // 5. Insert Addresses
+        if input.current_address.is_some() || input.current_city.is_some() {
+            sqlx::query(
+                "INSERT INTO student_addresses (
+                    student_id, tenant_id, organisation_id, address_type,
+                    address, city, state, zip_code, country
+                ) VALUES (
+                    $1::uuid, $2::uuid, $3::uuid, 'Current',
+                    $4, $5, $6, $7, $8
+                )"
+            )
+            .bind(&student.id)
+            .bind(&user_ctx.tenant_id)
+            .bind(&user_ctx.org_id)
+            .bind(&input.current_address)
+            .bind(&input.current_city)
+            .bind(&input.current_state)
+            .bind(&input.current_zip_code)
+            .bind(&input.current_country)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error inserting current address: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+        }
+
+        if input.permanent_address.is_some() || input.permanent_city.is_some() {
+            sqlx::query(
+                "INSERT INTO student_addresses (
+                    student_id, tenant_id, organisation_id, address_type,
+                    address, city, state, zip_code, country
+                ) VALUES (
+                    $1::uuid, $2::uuid, $3::uuid, 'Permanent',
+                    $4, $5, $6, $7, $8
+                )"
+            )
+            .bind(&student.id)
+            .bind(&user_ctx.tenant_id)
+            .bind(&user_ctx.org_id)
+            .bind(&input.permanent_address)
+            .bind(&input.permanent_city)
+            .bind(&input.permanent_state)
+            .bind(&input.permanent_zip_code)
+            .bind(&input.permanent_country)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error inserting permanent address: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+        }
+
+        // 6. Insert Custom Data
+        let custom_data_val = input.custom_data.map(|c| c.0).unwrap_or_else(|| serde_json::json!({}));
+        sqlx::query(
+            "INSERT INTO student_custom_data (
+                student_id, tenant_id, organisation_id, data
+            ) VALUES (
+                $1::uuid, $2::uuid, $3::uuid, $4
+            )"
+        )
+        .bind(&student.id)
+        .bind(&user_ctx.tenant_id)
+        .bind(&user_ctx.org_id)
+        .bind(&custom_data_val)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error inserting custom data: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        tx.commit().await.map_err(|e| {
+            tracing::error!("DB transaction commit error: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        Ok(AddStudentResponse {
+            student,
+            generated_email: student_email,
+            generated_password: student_password,
+        })
+    }
+
+    /// Create user credentials for an existing student that has no user account.
+    async fn create_student_credentials(
+        &self,
+        ctx: &Context<'_>,
+        student_id: String,
+    ) -> Result<AddStudentResponse> {
+        let user_ctx = require_permission(ctx, "students.create")?;
+        let pool = ctx.data::<PgPool>()?;
+
+        tracing::info!("GraphQL mutation: create_student_credentials");
+
+        let mut tx = pool.begin().await.map_err(|e| {
+            tracing::error!("DB error starting tx: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // RLS context
+        sqlx::query("SET LOCAL ROLE app_user")
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error setting role: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+        sqlx::query(&format!("SET LOCAL app.current_tenant = '{}'", user_ctx.tenant_id))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error setting tenant: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+        sqlx::query(&format!("SET LOCAL app.current_org = '{}'", user_ctx.org_id))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error setting org: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+
+        // Fetch the student (RLS ensures tenant/org isolation)
+        let student = sqlx::query_as::<_, Student>(
+            "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
+        )
+        .bind(&student_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching student: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?
+        .ok_or_else(|| async_graphql::Error::new("Student not found"))?;
+
+        // Check student doesn't already have a user account
+        if student.user_id.is_some() {
+            return Err(async_graphql::Error::new("Student already has a user account"));
+        }
+
+        // Generate admission number if missing
+        let admission_number = match &student.admission_number {
+            Some(adm) if !adm.is_empty() => adm.clone(),
+            _ => {
+                let year = chrono::Utc::now().format("%Y").to_string();
+                let next_seq: i32 = sqlx::query_scalar(
+                    "INSERT INTO organisation_settings (organisation_id, tenant_id, admission_seq)
+                     VALUES ($1::uuid, $2::uuid, 1)
+                     ON CONFLICT (organisation_id)
+                     DO UPDATE SET admission_seq = organisation_settings.admission_seq + 1
+                     RETURNING admission_seq",
+                )
+                .bind(&user_ctx.org_id)
+                .bind(&user_ctx.tenant_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| {
+                    tracing::error!("DB error getting admission seq: {e}");
+                    async_graphql::Error::new("Internal server error")
+                })?;
+                let adm = format!("ADM-{}-{:04}", year, next_seq);
+
+                sqlx::query("UPDATE students SET admission_number = $1 WHERE id = $2::uuid")
+                    .bind(&adm)
+                    .bind(&student_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("DB error updating admission number: {e}");
+                        async_graphql::Error::new("Internal server error")
+                    })?;
+
+                adm
+            }
+        };
+
+        // Fetch org slug for email generation
+        let org_slug: String = sqlx::query_scalar(
+            "SELECT slug FROM organisations WHERE id = $1::uuid",
+        )
+        .bind(&user_ctx.org_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching org slug: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        let student_email = format!("{}@{}.com", admission_number.to_lowercase(), org_slug);
+        let student_password = generate_random_password();
+        let student_pw_hash = bcrypt::hash(&student_password, 12).map_err(|e| {
+            async_graphql::Error::new(format!("Failed to hash password: {e}"))
+        })?;
+
+        // Create user account
+        let student_user_id: String = sqlx::query_scalar(
+            "INSERT INTO users (name, email, password_hash, system_role, tenant_id)
+             VALUES ($1, $2, $3, 'user', $4::uuid)
+             RETURNING id::text",
+        )
+        .bind(&student.name)
+        .bind(&student_email)
+        .bind(&student_pw_hash)
+        .bind(&user_ctx.tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error creating student user: {e}");
+            async_graphql::Error::new("Failed to create student user account")
+        })?;
+
+        // Link user to organisation
+        sqlx::query(
+            "INSERT INTO user_organisations (user_id, organisation_id)
+             VALUES ($1::uuid, $2::uuid)",
+        )
+        .bind(&student_user_id)
+        .bind(&user_ctx.org_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error linking student user to org: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // Assign student role
+        let student_role_id: Option<String> = sqlx::query_scalar(
+            "SELECT id::text FROM roles WHERE organisation_id = $1::uuid AND slug = 'student'",
+        )
+        .bind(&user_ctx.org_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error finding student role: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        if let Some(role_id) = student_role_id {
+            sqlx::query(
+                "INSERT INTO user_org_roles (user_id, organisation_id, role_id, assigned_by)
+                 VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid)
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(&student_user_id)
+            .bind(&user_ctx.org_id)
+            .bind(&role_id)
+            .bind(&user_ctx.user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error assigning student role: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+        }
+
+        // Link student record to user account
+        sqlx::query("UPDATE students SET user_id = $1::uuid WHERE id = $2::uuid")
+            .bind(&student_user_id)
+            .bind(&student_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error linking student to user: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+
+        tx.commit().await.map_err(|e| {
+            tracing::error!("DB error committing tx: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // Re-fetch so the student has updated user_id/login_email
+        let updated_student = sqlx::query_as::<_, Student>(
+            "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
+        )
+        .bind(&student_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error re-fetching student: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        Ok(AddStudentResponse {
+            student: updated_student,
+            generated_email: student_email,
+            generated_password: student_password,
+        })
+    }
+
+    // ── Dashboard Mutations ──────────────────────────────────────────────────
+
+    async fn create_event(&self, ctx: &Context<'_>, input: CreateEventInput) -> Result<Event> {
+        let user_ctx = require_permission(ctx, "events.create")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let inner_t = tenant_id.clone();
+        let inner_o = org_id.clone();
+
+        let event = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, Event>(
+                    "INSERT INTO events (tenant_id, organisation_id, title, description, event_date, end_date, start_time, end_time)
+                     VALUES ($1::uuid, $2::uuid, $3, $4, $5::date, $6::date, $7, $8)
+                     RETURNING id::text, title, description, event_date::text, end_date::text, start_time, end_time",
+                )
+                .bind(&inner_t)
+                .bind(&inner_o)
+                .bind(&input.title)
+                .bind(&input.description)
+                .bind(&input.event_date)
+                .bind(&input.end_date)
+                .bind(&input.start_time)
+                .bind(&input.end_time)
+                .fetch_one(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(event)
+    }
+
+    async fn delete_event(&self, ctx: &Context<'_>, id: String) -> Result<bool> {
+        let user_ctx = require_permission(ctx, "events.create")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                sqlx::query("DELETE FROM events WHERE id = $1::uuid")
+                    .bind(&id)
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(true)
+    }
+
+    async fn create_subject(&self, ctx: &Context<'_>, input: CreateSubjectInput) -> Result<Subject> {
+        let user_ctx = require_permission(ctx, "settings.update")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let inner_t = tenant_id.clone();
+        let inner_o = org_id.clone();
+
+        let subject = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, Subject>(
+                    "INSERT INTO subjects (tenant_id, organisation_id, name, class_name)
+                     VALUES ($1::uuid, $2::uuid, $3, $4)
+                     RETURNING id::text, name, class_name, status",
+                )
+                .bind(&inner_t)
+                .bind(&inner_o)
+                .bind(&input.name)
+                .bind(&input.class_name)
+                .fetch_one(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(subject)
+    }
+
+    async fn create_student_activity(&self, ctx: &Context<'_>, input: CreateStudentActivityInput) -> Result<StudentActivity> {
+        let user_ctx = require_permission(ctx, "students.create")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let inner_t = tenant_id.clone();
+        let inner_o = org_id.clone();
+
+        let activity = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, StudentActivity>(
+                    "INSERT INTO student_activities (tenant_id, organisation_id, student_id, title, description, activity_date)
+                     VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, COALESCE($6::date, CURRENT_DATE))
+                     RETURNING id::text, student_id::text, title, description, activity_date::text",
+                )
+                .bind(&inner_t)
+                .bind(&inner_o)
+                .bind(&input.student_id)
+                .bind(&input.title)
+                .bind(&input.description)
+                .bind(&input.activity_date)
+                .fetch_one(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(activity)
+    }
+
+    async fn create_admin_todo(&self, ctx: &Context<'_>, input: CreateAdminTodoInput) -> Result<AdminTodo> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let inner_t = tenant_id.clone();
+        let inner_o = org_id.clone();
+        let uid = user_ctx.user_id.clone();
+
+        let todo = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, AdminTodo>(
+                    "INSERT INTO admin_todos (tenant_id, organisation_id, user_id, title, due_time)
+                     VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5)
+                     RETURNING id::text, title, due_time, status",
+                )
+                .bind(&inner_t)
+                .bind(&inner_o)
+                .bind(&uid)
+                .bind(&input.title)
+                .bind(&input.due_time)
+                .fetch_one(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(todo)
+    }
+
+    async fn update_admin_todo(&self, ctx: &Context<'_>, input: UpdateAdminTodoInput) -> Result<AdminTodo> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let todo = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, AdminTodo>(
+                    "UPDATE admin_todos SET status = $2 WHERE id = $1::uuid
+                     RETURNING id::text, title, due_time, status",
+                )
+                .bind(&input.id)
+                .bind(&input.status)
+                .fetch_one(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(todo)
+    }
+
+    async fn delete_admin_todo(&self, ctx: &Context<'_>, id: String) -> Result<bool> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                sqlx::query("DELETE FROM admin_todos WHERE id = $1::uuid")
+                    .bind(&id)
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+        Ok(true)
+    }
+
+    async fn add_class(&self, ctx: &Context<'_>, class_name: String) -> Result<bool> {
+        let user_ctx = require_permission(ctx, "settings.update").map_err(|e| {
+            tracing::error!("add_class permission error for user {}: {}", ctx.data_opt::<UserContext>().map(|u| u.user_id.as_str()).unwrap_or("unknown"), e.message);
+            e
+        })?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let inner_t = tenant_id.clone();
+        let inner_o = org_id.clone();
+
+        tracing::info!("Attempting to add class '{}' to org {} in tenant {}", class_name, org_id, tenant_id);
+
+        execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                // Upsert — append class_name to the JSONB array if not already present
+                                let res = sqlx::query(
+                                        "INSERT INTO organisation_settings (organisation_id, tenant_id, classes)
+                                         VALUES ($1::uuid, $2::uuid, jsonb_build_array($3))
+                                         ON CONFLICT (organisation_id)
+                                         DO UPDATE SET classes = CASE
+                                             WHEN NOT (organisation_settings.classes ? $3)
+                                             THEN organisation_settings.classes || to_jsonb($3::text)
+                                             ELSE organisation_settings.classes
+                                         END",
+                                )
+                                .bind(&inner_o)
+                                .bind(&inner_t)
+                                .bind(&class_name)
+                                .execute(conn)
+                                .await.map_err(|e| {
+                                        tracing::error!("SQL Error in add_class upsert: {e}");
+                                        e
+                                })?;
+
+                tracing::info!("add_class execute result rows affected: {}", res.rows_affected());
+                Ok(())
+            })
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!("execute_in_context error in add_class: {e}");
+            e.extend()
+        })?;
+        Ok(true)
+    }
+
+    // ── Dashboard V2 Mutations ──────────────────────────────────────────────
+
+    /// Create a class routine entry.
+    async fn create_class_routine(
+        &self,
+        ctx: &Context<'_>,
+        input: CreateClassRoutineInput,
+    ) -> Result<ClassRoutine> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let routine = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let inp = CreateClassRoutineInput {
+                teacher_id: input.teacher_id.clone(),
+                class_name: input.class_name.clone(),
+                section: input.section.clone(),
+                day_of_week: input.day_of_week.clone(),
+                start_time: input.start_time.clone(),
+                end_time: input.end_time.clone(),
+                room: input.room.clone(),
+                subject_name: input.subject_name.clone(),
+            };
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, ClassRoutine>(
+                    "INSERT INTO class_routines (tenant_id, organisation_id, teacher_id, class_name, section, day_of_week, start_time, end_time, room, subject_name)
+                     VALUES (current_setting('app.current_tenant', true)::uuid, current_setting('app.current_org', true)::uuid,
+                             $1::uuid, $2, $3, $4, $5, $6, $7, $8)
+                     RETURNING id::text, teacher_id::text,
+                              (SELECT name FROM users WHERE id = class_routines.teacher_id) AS teacher_name,
+                              class_name, section, day_of_week, start_time, end_time, room, subject_name, status",
+                )
+                .bind(&inp.teacher_id)
+                .bind(&inp.class_name)
+                .bind(&inp.section)
+                .bind(&inp.day_of_week)
+                .bind(&inp.start_time)
+                .bind(&inp.end_time)
+                .bind(&inp.room)
+                .bind(&inp.subject_name)
+                .fetch_one(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(routine)
+    }
+
+    /// Delete a class routine entry.
+    async fn delete_class_routine(&self, ctx: &Context<'_>, id: String) -> Result<bool> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let routine_id = id.clone();
+            Box::pin(async move {
+                sqlx::query("DELETE FROM class_routines WHERE id = $1::uuid")
+                    .bind(&routine_id)
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(true)
+    }
+
+    /// Mark staff/teacher attendance.
+    async fn mark_staff_attendance(
+        &self,
+        ctx: &Context<'_>,
+        user_id: String,
+        date: String,
+        status: String,
+        remarks: Option<String>,
+    ) -> Result<bool> {
+        let user_ctx = require_permission(ctx, "attendance.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let marked_by = user_ctx.user_id.clone();
+
+        execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let uid = user_id.clone();
+            let dt = date.clone();
+            let st = status.clone();
+            let rmk = remarks.clone().unwrap_or_default();
+            let mb = marked_by.clone();
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO staff_attendance (tenant_id, organisation_id, user_id, date, status, marked_by, remarks)
+                     VALUES (current_setting('app.current_tenant', true)::uuid, current_setting('app.current_org', true)::uuid,
+                             $1::uuid, $2::date, $3, $4::uuid, $5)
+                     ON CONFLICT (user_id, date) DO UPDATE SET status = $3, marked_by = $4::uuid, remarks = $5",
+                )
+                .bind(&uid)
+                .bind(&dt)
+                .bind(&st)
+                .bind(&mb)
+                .bind(&rmk)
+                .execute(conn)
+                .await?;
+                Ok(())
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(true)
     }
 }
 

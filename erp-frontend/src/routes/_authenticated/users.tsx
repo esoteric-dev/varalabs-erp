@@ -1,10 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Plus, X, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
+import { Plus, X, ChevronDown, ChevronRight, Copy, Check, KeyRound } from 'lucide-react'
 import { fetchOrgUsers, createUser } from '../../lib/queries/org-users'
 import { fetchRoles, assignRoleToUser, removeRoleFromUser } from '../../lib/queries/roles'
 import { fetchTeacherClassAssignments, assignClassToTeacher, removeClassFromTeacher } from '../../lib/queries/teacher'
+import { resetUserPassword } from '../../lib/queries/user'
 import type { OrgUser, CreateUserResult } from '../../lib/queries/org-users'
 import type { RoleWithPermissions } from '../../lib/queries/roles'
 import type { TeacherClass } from '../../lib/queries/teacher'
@@ -44,6 +45,7 @@ function UsersPage() {
   const [newClassName, setNewClassName] = useState('')
   const [newIsClassTeacher, setNewIsClassTeacher] = useState(false)
   const [createdCredentials, setCreatedCredentials] = useState<{ email: string; password: string } | null>(null)
+  const [resetCredentials, setResetCredentials] = useState<{ email: string; password: string } | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
   const { data: users = [], isLoading } = useQuery<OrgUser[]>({
@@ -126,6 +128,16 @@ function UsersPage() {
     },
   })
 
+  const resetPasswordMutation = useMutation({
+    mutationFn: (userId: string) => resetUserPassword(userId),
+    onSuccess: (data, userId) => {
+      if (data.generatedPassword) {
+        const user = users.find(u => u.id === userId)
+        setResetCredentials({ email: user?.email || '', password: data.generatedPassword })
+      }
+    },
+  })
+
   const isTeacher = (user: OrgUser) =>
     user.roleNames?.toLowerCase().includes('teacher') ?? false
 
@@ -182,6 +194,47 @@ function UsersPage() {
                   className="text-gray-400 hover:text-teal-600 transition-colors"
                 >
                   {copiedField === 'cred-pw' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Credentials Card */}
+      {resetCredentials && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-amber-800 mb-1">Password Reset — New Credentials</h3>
+              <p className="text-xs text-amber-600 mb-3">Save these credentials. The password will not be shown again.</p>
+            </div>
+            <button onClick={() => setResetCredentials(null)} className="text-amber-400 hover:text-amber-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="bg-white rounded-lg border border-amber-100 px-4 py-3">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Email</div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-mono text-gray-800">{resetCredentials.email}</span>
+                <button
+                  onClick={() => copyToClipboard(resetCredentials.email, 'reset-email')}
+                  className="text-gray-400 hover:text-teal-600 transition-colors"
+                >
+                  {copiedField === 'reset-email' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-amber-100 px-4 py-3">
+              <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Password</div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-mono text-gray-800">{resetCredentials.password}</span>
+                <button
+                  onClick={() => copyToClipboard(resetCredentials.password, 'reset-pw')}
+                  className="text-gray-400 hover:text-teal-600 transition-colors"
+                >
+                  {copiedField === 'reset-pw' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -345,23 +398,34 @@ function UsersPage() {
                     </td>
                     <td className="px-5 py-3.5 text-sm text-gray-500">{user.phone || '-'}</td>
                     <td className="px-5 py-3.5">
-                      {orgId && roles.length > 0 && (
-                        <select
-                          className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-500"
-                          defaultValue=""
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              assignMutation.mutate({ userId: user.id, roleId: e.target.value })
-                              e.target.value = ''
-                            }
-                          }}
+                      <div className="flex items-center gap-2">
+                        {orgId && roles.length > 0 && (
+                          <select
+                            className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                            defaultValue=""
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                assignMutation.mutate({ userId: user.id, roleId: e.target.value })
+                                e.target.value = ''
+                              }
+                            }}
+                          >
+                            <option value="" disabled>+ Assign role</option>
+                            {roles.map((r) => (
+                              <option key={r.id} value={r.id}>{r.name}</option>
+                            ))}
+                          </select>
+                        )}
+                        <button
+                          onClick={() => resetPasswordMutation.mutate(user.id)}
+                          disabled={resetPasswordMutation.isPending}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded hover:bg-amber-100 transition-colors disabled:opacity-50"
+                          title="Reset password"
                         >
-                          <option value="" disabled>+ Assign role</option>
-                          {roles.map((r) => (
-                            <option key={r.id} value={r.id}>{r.name}</option>
-                          ))}
-                        </select>
-                      )}
+                          <KeyRound className="w-3 h-3" />
+                          Reset
+                        </button>
+                      </div>
                     </td>
                   </tr>
                   {/* Class Assignments Row */}

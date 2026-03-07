@@ -67,6 +67,14 @@ pub struct Claims {
     pub exp: usize,
 }
 
+/// JWT claims structure for Refresh Tokens.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RefreshClaims {
+    pub sub: String,
+    pub token_type: String, // typically "refresh"
+    pub exp: usize,
+}
+
 // ── Middleware ───────────────────────────────────────────────────────────────
 
 /// Axum middleware that **optionally** extracts a JWT from the `Authorization`

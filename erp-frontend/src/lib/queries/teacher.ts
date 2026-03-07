@@ -102,13 +102,7 @@ const TEACHER_CLASS_ASSIGNMENTS_QUERY = gql`
 
 const ASSIGN_CLASS_MUTATION = gql`
   mutation AssignClassToTeacher($userId: String!, $className: String!, $isClassTeacher: Boolean) {
-    assignClassToTeacher(userId: $userId, className: $className, isClassTeacher: $isClassTeacher) {
-      id
-      userId
-      userName
-      className
-      isClassTeacher
-    }
+    assignClassToTeacher(userId: $userId, className: $className, isClassTeacher: $isClassTeacher)
   }
 `
 
@@ -123,8 +117,8 @@ export async function fetchTeacherClassAssignments(userId?: string): Promise<Tea
   return data.teacherClassAssignments
 }
 
-export async function assignClassToTeacher(userId: string, className: string, isClassTeacher?: boolean): Promise<TeacherClass> {
-  const data = await gqlClient.request<{ assignClassToTeacher: TeacherClass }>(ASSIGN_CLASS_MUTATION, { userId, className, isClassTeacher })
+export async function assignClassToTeacher(userId: string, className: string, isClassTeacher?: boolean): Promise<boolean> {
+  const data = await gqlClient.request<{ assignClassToTeacher: boolean }>(ASSIGN_CLASS_MUTATION, { userId, className, isClassTeacher })
   return data.assignClassToTeacher
 }
 
