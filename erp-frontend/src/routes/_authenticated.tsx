@@ -1,11 +1,5 @@
 import { createFileRoute, Outlet, Link, redirect } from '@tanstack/react-router'
-import {
-  LayoutDashboard, Users, CalendarCheck, Wallet, LogOut,
-  ChevronRight, Bell, Search, IndianRupee,
-  UserPlus, Megaphone, BarChart3, Shield, UserCog,
-  BookOpen, CalendarOff, ClipboardList, GraduationCap,
-  Settings, Bus, Package, School,
-} from 'lucide-react'
+import { LogOut, Bell, Search, Settings } from 'lucide-react'
 import { fetchCurrentUser, fetchMyRoles, fetchMyPermissions } from '../lib/queries/user'
 import type { OrgRole } from '../lib/queries/user'
 
