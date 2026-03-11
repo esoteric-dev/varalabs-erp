@@ -331,6 +331,7 @@ pub struct OrgUser {
     pub system_role: String,
     pub phone: Option<String>,
     pub role_names: Option<String>,
+    pub employee_id: Option<String>,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
@@ -1079,6 +1080,36 @@ impl QueryRoot {
         Ok(roles)
     }
 
+    /// Get the current user's employee ID in the current organisation.
+    async fn my_employee_id(&self, ctx: &Context<'_>) -> Result<Option<String>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+
+        if user_ctx.org_id.is_empty() {
+            return Ok(None);
+        }
+
+        let user_uuid = uuid::Uuid::parse_str(&user_ctx.user_id)
+            .map_err(|_| async_graphql::Error::new("Invalid user id"))?;
+        let org_uuid = uuid::Uuid::parse_str(&user_ctx.org_id)
+            .map_err(|_| async_graphql::Error::new("Invalid org id"))?;
+
+        let employee_id: Option<String> = sqlx::query_scalar(
+            "SELECT employee_id FROM user_organisations WHERE user_id = $1 AND organisation_id = $2",
+        )
+        .bind(user_uuid)
+        .bind(org_uuid)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching employee id: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?
+        .flatten();
+
+        Ok(employee_id)
+    }
+
     // ── Attendance ──────────────────────────────────────────────────────────
 
     async fn attendance_records(
@@ -1421,13 +1452,14 @@ impl QueryRoot {
 
         let rows = sqlx::query_as::<_, OrgUser>(
             "SELECT u.id::text, u.name, u.email, u.system_role, u.phone,
-                    STRING_AGG(r.name, ', ' ORDER BY r.name) AS role_names
+                    STRING_AGG(r.name, ', ' ORDER BY r.name) AS role_names,
+                    uo.employee_id
              FROM user_organisations uo
              JOIN users u ON u.id = uo.user_id
              LEFT JOIN user_org_roles uor ON uor.user_id = u.id AND uor.organisation_id = uo.organisation_id
              LEFT JOIN roles r ON r.id = uor.role_id
              WHERE uo.organisation_id = $1
-             GROUP BY u.id, u.name, u.email, u.system_role, u.phone
+             GROUP BY u.id, u.name, u.email, u.system_role, u.phone, uo.employee_id
              ORDER BY u.name",
         )
         .bind(org_uuid)
@@ -3303,12 +3335,32 @@ impl MutationRoot {
         let user_uuid = uuid::Uuid::parse_str(&user.id)
             .map_err(|_| async_graphql::Error::new("Invalid user id"))?;
 
+        // Auto-generate employee ID
+        let year = chrono::Utc::now().format("%Y").to_string();
+        let next_seq: i32 = sqlx::query_scalar(
+            "INSERT INTO organisation_settings (organisation_id, tenant_id, employee_seq)
+             VALUES ($1, $2, 1)
+             ON CONFLICT (organisation_id)
+             DO UPDATE SET employee_seq = organisation_settings.employee_seq + 1
+             RETURNING employee_seq",
+        )
+        .bind(org_uuid)
+        .bind(tenant_uuid)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error getting employee seq: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+        let employee_id = format!("EMP-{}-{:04}", year, next_seq);
+
         sqlx::query(
-            "INSERT INTO user_organisations (user_id, organisation_id)
-             VALUES ($1, $2)",
+            "INSERT INTO user_organisations (user_id, organisation_id, employee_id)
+             VALUES ($1, $2, $3)",
         )
         .bind(user_uuid)
         .bind(org_uuid)
+        .bind(&employee_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| {

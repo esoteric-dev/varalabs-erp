@@ -1,50 +1,73 @@
-import type { LucideIcon } from 'lucide-react'
-import { Users, GraduationCap, UserCheck, BookOpen } from 'lucide-react'
 import type { ReportSummary } from '../../../lib/queries/reports'
-
-interface StatCardData {
-  label: string
-  value: string
-  active: number
-  inactive: number
-  icon: LucideIcon
-  gradient: string
-  lightBg: string
-  lightText: string
-}
 
 interface StatCardsProps {
   summary: ReportSummary | undefined
 }
 
 export function StatCards({ summary }: StatCardsProps) {
-  const fmt = (v: number) => v.toLocaleString('en-IN')
-
-  const cards: StatCardData[] = summary ? [
-    { label: 'Total Students', value: fmt(summary.totalStudents), active: summary.activeStudents, inactive: summary.inactiveStudents, icon: Users, gradient: 'from-blue-500 to-blue-600', lightBg: 'bg-blue-50', lightText: 'text-blue-600' },
-    { label: 'Total Teachers', value: fmt(summary.totalTeachers), active: summary.activeTeachers, inactive: summary.inactiveTeachers, icon: GraduationCap, gradient: 'from-amber-500 to-amber-600', lightBg: 'bg-amber-50', lightText: 'text-amber-600' },
-    { label: 'Total Staff', value: fmt(summary.totalStaff), active: summary.activeStaff, inactive: summary.inactiveStaff, icon: UserCheck, gradient: 'from-purple-500 to-purple-600', lightBg: 'bg-purple-50', lightText: 'text-purple-600' },
-    { label: 'Total Subjects', value: fmt(summary.totalSubjects), active: summary.activeSubjects, inactive: summary.inactiveSubjects, icon: BookOpen, gradient: 'from-teal-500 to-teal-600', lightBg: 'bg-teal-50', lightText: 'text-teal-600' },
-  ] : []
-
   if (!summary) return null
 
+  const fmt = (v: number) => v.toLocaleString('en-IN')
+
+  const attendanceRate = summary.attendanceTodayTotal > 0
+    ? Math.round((summary.attendanceTodayPresent / summary.attendanceTodayTotal) * 100)
+    : 0
+
+  const fmtCurrency = (paise: number) =>
+    (paise / 100).toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
+
+  const dailyRevenue = fmtCurrency(summary.feesCollected)
+
+  const cards = [
+    {
+      label: 'Total Students',
+      value: fmt(summary.totalStudents),
+      valueSuffix: undefined as string | undefined,
+      badgeText: `+${fmt(summary.activeStudents)} active`,
+      badgeColor: 'text-green-600 bg-green-50',
+      badgeIcon: 'trending_up',
+      iconBg: 'bg-blue-50 text-blue-600',
+      icon: 'groups',
+    },
+    {
+      label: 'Staff Present',
+      value: fmt(summary.attendanceTodayPresent),
+      valueSuffix: `/${fmt(summary.attendanceTodayTotal)}`,
+      badgeText: `${attendanceRate}% Attendance`,
+      badgeColor: 'text-teal-600 bg-teal-50',
+      badgeIcon: 'check_circle',
+      iconBg: 'bg-teal-50 text-teal-600',
+      icon: 'badge',
+    },
+    {
+      label: 'Fees Collected',
+      value: dailyRevenue,
+      valueSuffix: undefined as string | undefined,
+      badgeText: new Date().toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }),
+      badgeColor: 'text-slate-500 bg-slate-50',
+      badgeIcon: 'calendar_today',
+      iconBg: 'bg-purple-50 text-purple-600',
+      icon: 'payments',
+    },
+  ]
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       {cards.map((c) => (
-        <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-lg transition-all duration-300 group">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{c.label}</p>
-              <p className={`text-3xl font-bold mt-1 ${c.lightText}`}>{c.value}</p>
-              <div className="flex gap-3 mt-2 text-xs text-gray-500">
-                <span className="text-emerald-600">Active: {fmt(c.active)}</span>
-                <span className="text-red-400">Inactive: {fmt(c.inactive)}</span>
-              </div>
+        <div key={c.label} className="bg-white rounded-xl p-5 shadow-sm border border-slate-100 flex items-center justify-between">
+          <div>
+            <p className="text-slate-500 text-sm font-medium mb-1">{c.label}</p>
+            <h3 className="text-3xl font-bold text-slate-900">
+              {c.value}
+              {c.valueSuffix && <span className="text-lg text-slate-400 font-normal">{c.valueSuffix}</span>}
+            </h3>
+            <div className={`flex items-center gap-1 mt-2 text-xs font-bold ${c.badgeColor} w-fit px-2 py-0.5 rounded-full`}>
+              <span className="material-symbols-outlined text-sm">{c.badgeIcon}</span>
+              <span>{c.badgeText}</span>
             </div>
-            <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${c.gradient} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform`}>
-              <c.icon className="w-6 h-6" />
-            </div>
+          </div>
+          <div className={`size-14 rounded-full ${c.iconBg} flex items-center justify-center`}>
+            <span className="material-symbols-outlined text-3xl">{c.icon}</span>
           </div>
         </div>
       ))}

@@ -144,6 +144,15 @@ const MY_STUDENT_QUERY = gql`
       id
       name
       className
+      gender
+      dateOfBirth
+      bloodGroup
+      religion
+      email
+      phone
+      admissionNumber
+      admissionDate
+      loginEmail
     }
   }
 `

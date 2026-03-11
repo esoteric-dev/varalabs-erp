@@ -196,6 +196,12 @@ export const MY_PERMISSIONS_QUERY = gql`
   }
 `
 
+export const MY_EMPLOYEE_ID_QUERY = gql`
+  query MyEmployeeId {
+    myEmployeeId
+  }
+`
+
 export const ORGANISATIONS_QUERY = gql`
   query Organisations {
     organisations {
@@ -365,6 +371,11 @@ export async function fetchMyRoles(): Promise<OrgRole[]> {
 export async function fetchMyPermissions(): Promise<string[]> {
   const data = await gqlClient.request<{ myPermissions: string[] }>(MY_PERMISSIONS_QUERY)
   return data.myPermissions
+}
+
+export async function fetchMyEmployeeId(): Promise<string | null> {
+  const data = await gqlClient.request<{ myEmployeeId: string | null }>(MY_EMPLOYEE_ID_QUERY)
+  return data.myEmployeeId
 }
 
 export async function fetchCustomDomains(organisationId: string): Promise<CustomDomain[]> {

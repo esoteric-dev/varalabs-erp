@@ -18,6 +18,7 @@ import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedRolesRouteImport } from './routes/_authenticated/roles'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
+import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedPayrollRouteImport } from './routes/_authenticated/payroll'
 import { Route as AuthenticatedNoticesRouteImport } from './routes/_authenticated/notices'
 import { Route as AuthenticatedMyStudentsRouteImport } from './routes/_authenticated/my-students'
@@ -73,6 +74,11 @@ const AuthenticatedRolesRoute = AuthenticatedRolesRouteImport.update({
 const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedPayrollRoute = AuthenticatedPayrollRouteImport.update({
@@ -154,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/my-students': typeof AuthenticatedMyStudentsRoute
   '/notices': typeof AuthenticatedNoticesRoute
   '/payroll': typeof AuthenticatedPayrollRoute
+  '/profile': typeof AuthenticatedProfileRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/roles': typeof AuthenticatedRolesRoute
   '/settings': typeof AuthenticatedSettingsRoute
@@ -175,6 +182,7 @@ export interface FileRoutesByTo {
   '/my-students': typeof AuthenticatedMyStudentsRoute
   '/notices': typeof AuthenticatedNoticesRoute
   '/payroll': typeof AuthenticatedPayrollRoute
+  '/profile': typeof AuthenticatedProfileRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/roles': typeof AuthenticatedRolesRoute
   '/settings': typeof AuthenticatedSettingsRoute
@@ -199,6 +207,7 @@ export interface FileRoutesById {
   '/_authenticated/my-students': typeof AuthenticatedMyStudentsRoute
   '/_authenticated/notices': typeof AuthenticatedNoticesRoute
   '/_authenticated/payroll': typeof AuthenticatedPayrollRoute
+  '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/roles': typeof AuthenticatedRolesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
@@ -224,6 +233,7 @@ export interface FileRouteTypes {
     | '/my-students'
     | '/notices'
     | '/payroll'
+    | '/profile'
     | '/reports'
     | '/roles'
     | '/settings'
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
     | '/my-students'
     | '/notices'
     | '/payroll'
+    | '/profile'
     | '/reports'
     | '/roles'
     | '/settings'
@@ -268,6 +279,7 @@ export interface FileRouteTypes {
     | '/_authenticated/my-students'
     | '/_authenticated/notices'
     | '/_authenticated/payroll'
+    | '/_authenticated/profile'
     | '/_authenticated/reports'
     | '/_authenticated/roles'
     | '/_authenticated/settings'
@@ -348,6 +360,13 @@ declare module '@tanstack/react-router' {
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/profile': {
+      id: '/_authenticated/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AuthenticatedProfileRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/payroll': {
@@ -447,6 +466,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedMyStudentsRoute: typeof AuthenticatedMyStudentsRoute
   AuthenticatedNoticesRoute: typeof AuthenticatedNoticesRoute
   AuthenticatedPayrollRoute: typeof AuthenticatedPayrollRoute
+  AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedRolesRoute: typeof AuthenticatedRolesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
@@ -467,6 +487,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedMyStudentsRoute: AuthenticatedMyStudentsRoute,
   AuthenticatedNoticesRoute: AuthenticatedNoticesRoute,
   AuthenticatedPayrollRoute: AuthenticatedPayrollRoute,
+  AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedRolesRoute: AuthenticatedRolesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
