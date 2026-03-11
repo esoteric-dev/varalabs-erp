@@ -1,12 +1,6 @@
-import { useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { fetchReportSummary } from '../../lib/queries/reports'
-import { fetchCurrentUser } from '../../lib/queries/user'
-import {
-  fetchEvents, fetchTodos, fetchNotices, fetchLeaveRequests,
-  fetchActivities,
-} from '../../lib/queries/dashboard'
 
 // Widget components
 import { StatCards } from './admin/StatCards'
@@ -18,11 +12,10 @@ import { QuickActions } from './admin/QuickActions'
 
 interface AdminDashboardProps { tenantId: string }
 
-export function AdminDashboard({ tenantId }: AdminDashboardProps) {
+export function AdminDashboard({ tenantId: _tenantId }: AdminDashboardProps) {
   const qc = useQueryClient()
 
   // ── Data fetching ────────────────────────────────────────────────────────
-  const { data: user } = useQuery({ queryKey: ['me'], queryFn: fetchCurrentUser, staleTime: 5 * 60_000 })
   const { data: summary, isLoading: summaryLoading, dataUpdatedAt } = useQuery({
     queryKey: ['reportSummary'], queryFn: fetchReportSummary, staleTime: 5 * 60_000,
   })

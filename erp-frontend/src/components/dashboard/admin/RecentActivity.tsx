@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { fetchActivities } from '../../../lib/queries/dashboard'
-import type { StudentActivity } from '../../../lib/queries/dashboard'
 
 const activityIcons: Record<string, { icon: string; bg: string; color: string }> = {
   enrollment: { icon: 'person_add', bg: 'bg-blue-50', color: 'text-blue-600' },

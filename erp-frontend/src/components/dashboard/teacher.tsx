@@ -12,7 +12,7 @@ interface TeacherDashboardProps {
   tenantId: string
 }
 
-export function TeacherDashboard({ tenantId }: TeacherDashboardProps) {
+export function TeacherDashboard({ tenantId: _tenantId }: TeacherDashboardProps) {
   const { data: user } = useQuery({
     queryKey: ['me'],
     queryFn: fetchCurrentUser,

@@ -2,8 +2,6 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchAttendanceSummary } from '../../../lib/queries/dashboard-v2'
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
 export function AttendanceChart() {
   const [period, setPeriod] = useState('this_week')
 
@@ -14,7 +12,6 @@ export function AttendanceChart() {
   })
 
   // Generate bar data from real attendance or fallback
-  const totalStudents = attendanceSummary?.studentTotal || 100
   const presentRate = attendanceSummary?.studentTotal
     ? Math.round((attendanceSummary.studentPresent / attendanceSummary.studentTotal) * 100)
     : 0
