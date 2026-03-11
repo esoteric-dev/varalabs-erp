@@ -3,11 +3,13 @@ mod db;
 mod errors;
 mod graphql;
 mod offer_letter;
+mod uploads;
 
 use axum::{extract::Extension, middleware, routing::{get, post}, Router};
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
 
 use crate::auth::{auth_middleware, UserContext};
@@ -73,10 +75,17 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // Uploads directory for serving static files (student photos, etc.)
+    let uploads_dir = env::var("UPLOADS_DIR").unwrap_or_else(|_| "./uploads".into());
+
     // Assemble the Axum router.
     let app = Router::new()
         .route("/graphql", post(graphql_handler))
-        .route("/api/offer-letter/{user_id}", get(offer_letter::offer_letter_handler))
+        .route("/api/offer-letter/{user_id}", get(offer_letter::offer_letter_handler).post(offer_letter::generate_offer_letter_handler))
+        .route("/api/students/{student_id}/photo", post(uploads::upload_student_photo))
+        .route("/api/users/{user_id}/photo", post(uploads::upload_user_photo))
+        .route("/api/me/photo", post(uploads::upload_my_photo))
+        .nest_service("/uploads", ServeDir::new(&uploads_dir))
         .layer(middleware::from_fn_with_state(
             pool_for_middleware,
             auth_middleware,

@@ -1,16 +1,17 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
-import { Plus, X, ChevronDown, ChevronRight, Copy, Check, KeyRound, Search, UserPlus } from 'lucide-react'
-import { fetchOrgUsers, createUser } from '../../lib/queries/org-users'
-import { fetchRoles, assignRoleToUser, removeRoleFromUser } from '../../lib/queries/roles'
-import { fetchTeacherClassAssignments, assignClassToTeacher, removeClassFromTeacher } from '../../lib/queries/teacher'
-import { resetUserPassword } from '../../lib/queries/user'
-import type { OrgUser, CreateUserResult } from '../../lib/queries/org-users'
-import type { RoleWithPermissions } from '../../lib/queries/roles'
-import type { TeacherClass } from '../../lib/queries/teacher'
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react'
+import { Plus, X, ChevronDown, ChevronRight, Copy, Check, KeyRound, Search, UserPlus, Eye } from 'lucide-react'
+import { fetchOrgUsers, createUser, previewLoginEmail } from '../../../lib/queries/org-users'
+import { fetchRoles, assignRoleToUser, removeRoleFromUser } from '../../../lib/queries/roles'
+import { fetchTeacherClassAssignments, assignClassToTeacher, removeClassFromTeacher } from '../../../lib/queries/teacher'
+import { resetUserPassword } from '../../../lib/queries/user'
+import { uploadUserPhoto } from '../../../lib/queries/uploads'
+import type { OrgUser, CreateUserResult } from '../../../lib/queries/org-users'
+import type { RoleWithPermissions } from '../../../lib/queries/roles'
+import type { TeacherClass } from '../../../lib/queries/teacher'
 
-export const Route = createFileRoute('/_authenticated/users')({
+export const Route = createFileRoute('/_authenticated/users/')({
   component: UsersPage,
 })
 
@@ -140,7 +141,7 @@ function UsersPage() {
   }, [users])
 
   const createUserMutation = useMutation({
-    mutationFn: ({ name, email, phone, password }: { name: string; email: string; phone?: string; password?: string }) =>
+    mutationFn: ({ name, email, phone, password }: { name: string; email?: string; phone?: string; password?: string }) =>
       createUser(name, email, phone, undefined, password || undefined),
     onSuccess: (data: CreateUserResult) => {
       queryClient.invalidateQueries({ queryKey: ['orgUsers'] })
@@ -152,14 +153,44 @@ function UsersPage() {
       setNewEmail('')
       setNewPhone('')
       setNewPassword('')
+      setEmailWasAutoSet(true)
     },
   })
 
-  const handleNameChange = (value: string) => {
+  const [emailWasAutoSet, setEmailWasAutoSet] = useState(true)
+  const emailDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleNameChange = useCallback((value: string) => {
     setNewName(value)
-    if (orgSlug && (!newEmail || newEmail === suggestEmail(newName, orgSlug))) {
+
+    // Only auto-fill if user hasn't manually edited the email
+    if (!emailWasAutoSet) return
+
+    // Immediate local preview
+    if (orgSlug) {
       setNewEmail(suggestEmail(value, orgSlug))
     }
+
+    // Debounced backend preview for uniqueness
+    if (emailDebounceRef.current) clearTimeout(emailDebounceRef.current)
+    const trimmed = value.trim()
+    if (!trimmed) {
+      setNewEmail('')
+      return
+    }
+    emailDebounceRef.current = setTimeout(async () => {
+      try {
+        const email = await previewLoginEmail(trimmed)
+        setNewEmail(email)
+      } catch {
+        // Keep local preview on error
+      }
+    }, 400)
+  }, [orgSlug, emailWasAutoSet])
+
+  const handleEmailChange = (value: string) => {
+    setNewEmail(value)
+    setEmailWasAutoSet(false)
   }
 
   const copyToClipboard = (text: string, field: string) => {
@@ -340,7 +371,7 @@ function UsersPage() {
               e.preventDefault()
               createUserMutation.mutate({
                 name: newName,
-                email: newEmail,
+                email: newEmail || undefined,
                 phone: newPhone || undefined,
                 password: newPassword || undefined,
               })
@@ -353,8 +384,10 @@ function UsersPage() {
                 <input value={newName} onChange={(e) => handleNameChange(e.target.value)} required className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" placeholder="Full name" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Email</label>
-                <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} required type="email" className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" placeholder={orgSlug ? `name@${orgSlug}.com` : 'email@example.com'} />
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  Login Email <span className="text-gray-400 font-normal">(auto-generated from name)</span>
+                </label>
+                <input value={newEmail} onChange={(e) => handleEmailChange(e.target.value)} type="email" className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent" placeholder={orgSlug ? `name@${orgSlug}.com` : 'Auto-generated if blank'} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Phone</label>
@@ -648,6 +681,24 @@ function UserRow({
   isTeacher: boolean
 }) {
   const isExpanded = expandedUser === user.id
+  const queryClient = useQueryClient()
+  const avatarFileRef = useRef<HTMLInputElement>(null)
+
+  const photoMutation = useMutation({
+    mutationFn: (file: File) => uploadUserPhoto(user.id, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orgUsers'] })
+      queryClient.invalidateQueries({ queryKey: ['orgUser', user.id] })
+      queryClient.invalidateQueries({ queryKey: ['currentUser'] })
+    },
+  })
+
+  const handleAvatarPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      photoMutation.mutate(file)
+    }
+  }
 
   return (
     <>
@@ -662,8 +713,24 @@ function UserRow({
                 {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
               </button>
             )}
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-              {user.name.split(' ').map(n => n[0]).join('')}
+            <div className="relative shrink-0 group">
+              <input ref={avatarFileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarPhoto} />
+              {user.photoUrl ? (
+                <img src={user.photoUrl} alt={user.name} className="w-8 h-8 rounded-full object-cover" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                  {user.name.split(' ').map(n => n[0]).join('')}
+                </div>
+              )}
+              <button
+                onClick={() => avatarFileRef.current?.click()}
+                disabled={photoMutation.isPending}
+                className="absolute inset-0 rounded-full bg-black/0 hover:bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-white text-sm drop-shadow">
+                  {photoMutation.isPending ? 'hourglass_empty' : 'photo_camera'}
+                </span>
+              </button>
             </div>
             <div className="min-w-0">
               <span className="text-sm font-medium text-gray-800 block truncate">{user.name}</span>
@@ -742,6 +809,14 @@ function UserRow({
               <KeyRound className="w-3 h-3" />
               Reset
             </button>
+            <Link
+              to="/users/$userId"
+              params={{ userId: user.id }}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded hover:bg-teal-100 transition-colors whitespace-nowrap"
+            >
+              <Eye className="w-3 h-3" />
+              View
+            </Link>
           </div>
         </td>
       </tr>

@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useRef } from 'react'
 import type { OrgRole } from '../../lib/queries/user'
-import { fetchMyEmployeeId } from '../../lib/queries/user'
+import { fetchCurrentUser, fetchMyEmployeeId, updateMyProfile, uploadMyPhoto } from '../../lib/queries/user'
 import { fetchMyStudent } from '../../lib/queries/students'
 import { fetchMyClasses } from '../../lib/queries/teacher'
 import type { Student } from '../../lib/queries/students'
@@ -12,7 +13,17 @@ export const Route = createFileRoute('/_authenticated/profile')({
 })
 
 function ProfilePage() {
-  const { currentUser, myRoles, myPermissions } = Route.useRouteContext()
+  const { currentUser: initialUser, myRoles, myPermissions } = Route.useRouteContext()
+  const queryClient = useQueryClient()
+
+  // Subscribe reactively so photo/profile updates re-render immediately
+  const { data: currentUser } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: fetchCurrentUser,
+    initialData: initialUser,
+    staleTime: 5 * 60_000,
+  })
+
   const roles = myRoles as OrgRole[]
   const permissions = myPermissions as string[]
   const slugs = roles.map((r) => r.slug)
@@ -20,6 +31,41 @@ function ProfilePage() {
   const isStudent = slugs.includes('student')
   const isTeacher = slugs.includes('teacher')
   const isAdmin = slugs.includes('admin') || currentUser.systemRole === 'tenant_admin' || currentUser.systemRole === 'superadmin'
+
+  // Edit mode state
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState(currentUser.name)
+  const [editPhone, setEditPhone] = useState(currentUser.phone || '')
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const profileUpdateMutation = useMutation({
+    mutationFn: ({ name, phone }: { name: string; phone: string }) =>
+      updateMyProfile(name || undefined, phone),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['currentUser'] })
+      setIsEditing(false)
+    },
+  })
+
+  const photoUploadMutation = useMutation({
+    mutationFn: (file: File) => uploadMyPhoto(file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['currentUser'] })
+      setUploadError(null)
+    },
+    onError: (err: Error) => {
+      setUploadError(err.message)
+    },
+  })
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setUploadError(null)
+      photoUploadMutation.mutate(file)
+    }
+  }
 
   // Fetch student data if user has student role
   const { data: student } = useQuery<Student | null>({
@@ -99,11 +145,35 @@ function ProfilePage() {
         <div className="p-6 md:p-8">
           <div className="flex flex-col md:flex-row gap-6 items-start">
             {/* Avatar */}
-            <div className="relative shrink-0">
-              <div className="size-24 md:size-28 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-white text-3xl md:text-4xl font-bold border-4 border-white shadow-lg">
-                {initials}
-              </div>
+            <div className="relative shrink-0 group">
+              {currentUser.photoUrl ? (
+                <img src={currentUser.photoUrl} alt={currentUser.name} className="size-24 md:size-28 rounded-full object-cover border-4 border-white shadow-lg" />
+              ) : (
+                <div className="size-24 md:size-28 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-white text-3xl md:text-4xl font-bold border-4 border-white shadow-lg">
+                  {initials}
+                </div>
+              )}
               <div className="absolute bottom-1 right-1 size-5 rounded-full bg-green-500 border-3 border-white" />
+              {(isTeacher || isAdmin) && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoSelect}
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={photoUploadMutation.isPending}
+                    className="absolute inset-0 rounded-full bg-black/0 hover:bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-white text-2xl drop-shadow">
+                      {photoUploadMutation.isPending ? 'hourglass_empty' : 'photo_camera'}
+                    </span>
+                  </button>
+                </>
+              )}
             </div>
 
             {/* Name & Quick Info */}
@@ -142,21 +212,115 @@ function ProfilePage() {
                   </div>
                 )}
               </div>
+              {uploadError && (
+                <p className="text-xs text-rose-500 mt-1">{uploadError}</p>
+              )}
             </div>
 
             {/* Actions */}
             <div className="flex gap-2 shrink-0">
-              <Link
-                to="/settings"
-                className="flex items-center gap-2 px-4 py-2.5 bg-teal-50 text-teal-600 rounded-lg text-sm font-bold hover:bg-teal-100 transition-colors"
-              >
-                <span className="material-symbols-outlined text-lg">settings</span>
-                Settings
-              </Link>
+              {(isTeacher || isAdmin) && !isEditing && (
+                <button
+                  onClick={() => {
+                    setEditName(currentUser.name)
+                    setEditPhone(currentUser.phone || '')
+                    setIsEditing(true)
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-teal-50 text-teal-600 rounded-lg text-sm font-bold hover:bg-teal-100 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-lg">edit</span>
+                  Edit Profile
+                </button>
+              )}
+              {(isAdmin || permissions.includes('settings.update')) && (
+                <Link
+                  to="/settings"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-100 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-lg">settings</span>
+                  Settings
+                </Link>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Edit Profile Panel */}
+      {isEditing && (
+        <div className="bg-white rounded-xl shadow-sm border border-teal-100 mx-4">
+          <div className="px-6 py-4 border-b border-teal-100 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-teal-500">edit</span>
+              <h3 className="text-lg font-bold text-slate-900">Edit Profile</h3>
+            </div>
+            <button
+              onClick={() => setIsEditing(false)}
+              className="text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
+          <div className="p-6">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                profileUpdateMutation.mutate({ name: editName, phone: editPhone })
+              }}
+              className="space-y-4 max-w-lg"
+            >
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="Enter phone number"
+                  className="w-full px-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={profileUpdateMutation.isPending}
+                  className="px-5 py-2.5 bg-teal-600 text-white text-sm font-bold rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                >
+                  {profileUpdateMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  className="px-5 py-2.5 bg-slate-100 text-slate-600 text-sm font-bold rounded-lg hover:bg-slate-200 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+              {profileUpdateMutation.isError && (
+                <p className="text-sm text-rose-500">
+                  {(profileUpdateMutation.error as Error).message || 'Failed to update profile'}
+                </p>
+              )}
+              {profileUpdateMutation.isSuccess && (
+                <p className="text-sm text-emerald-600">Profile updated successfully</p>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Content Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -436,7 +600,9 @@ function ProfilePage() {
             </div>
             <div className="p-4 space-y-1">
               <QuickLink to="/" icon="dashboard" label="Dashboard" />
-              <QuickLink to="/settings" icon="settings" label="Settings" />
+              {(isAdmin || permissions.includes('settings.update')) && (
+                <QuickLink to="/settings" icon="settings" label="Settings" />
+              )}
               {isStudent && (
                 <>
                   <QuickLink to="/attendance" icon="calendar_month" label="My Attendance" />

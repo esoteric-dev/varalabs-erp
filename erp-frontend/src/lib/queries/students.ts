@@ -15,6 +15,7 @@ export interface Student {
   admissionDate?: string
   loginEmail?: string
   userId?: string
+  photoUrl?: string
 }
 
 export interface AddStudentResult {
@@ -94,6 +95,7 @@ const STUDENTS_QUERY = gql`
       admissionNumber
       loginEmail
       userId
+      photoUrl
     }
   }
 `
@@ -114,6 +116,7 @@ const STUDENT_QUERY = gql`
       admissionDate
       loginEmail
       userId
+      photoUrl
     }
   }
 `
@@ -153,6 +156,7 @@ const MY_STUDENT_QUERY = gql`
       admissionNumber
       admissionDate
       loginEmail
+      photoUrl
     }
   }
 `
@@ -255,4 +259,75 @@ export async function createStudentCredentials(studentId: string): Promise<AddSt
     { studentId },
   )
   return data.createStudentCredentials
+}
+
+// --- Update Student ---
+
+export interface UpdateStudentInput {
+  name?: string
+  className?: string
+  gender?: string
+  dateOfBirth?: string
+  bloodGroup?: string
+  religion?: string
+  email?: string
+  phone?: string
+  admissionNumber?: string
+  admissionDate?: string
+}
+
+const UPDATE_STUDENT_MUTATION = gql`
+  mutation UpdateStudent(
+    $studentId: String!
+    $name: String
+    $className: String
+    $gender: String
+    $dateOfBirth: String
+    $bloodGroup: String
+    $religion: String
+    $email: String
+    $phone: String
+    $admissionNumber: String
+    $admissionDate: String
+  ) {
+    updateStudent(
+      studentId: $studentId
+      name: $name
+      className: $className
+      gender: $gender
+      dateOfBirth: $dateOfBirth
+      bloodGroup: $bloodGroup
+      religion: $religion
+      email: $email
+      phone: $phone
+      admissionNumber: $admissionNumber
+      admissionDate: $admissionDate
+    ) {
+      id
+      name
+      className
+      gender
+      dateOfBirth
+      bloodGroup
+      religion
+      email
+      phone
+      admissionNumber
+      admissionDate
+      loginEmail
+      userId
+      photoUrl
+    }
+  }
+`
+
+export async function updateStudent(
+  studentId: string,
+  fields: UpdateStudentInput,
+): Promise<Student> {
+  const data = await gqlClient.request<{ updateStudent: Student }>(
+    UPDATE_STUDENT_MUTATION,
+    { studentId, ...fields },
+  )
+  return data.updateStudent
 }

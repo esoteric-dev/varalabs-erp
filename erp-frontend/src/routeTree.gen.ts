@@ -14,7 +14,6 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as AuthenticatedUsersRouteImport } from './routes/_authenticated/users'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedRolesRouteImport } from './routes/_authenticated/roles'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
@@ -29,7 +28,9 @@ import { Route as AuthenticatedAttendanceRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAssignmentsRouteImport } from './routes/_authenticated/assignments'
 import { Route as AuthenticatedAdmissionsRouteImport } from './routes/_authenticated/admissions'
 import { Route as AuthenticatedAddStaffRouteImport } from './routes/_authenticated/add-staff'
+import { Route as AuthenticatedUsersIndexRouteImport } from './routes/_authenticated/users/index'
 import { Route as AuthenticatedStudentsIndexRouteImport } from './routes/_authenticated/students/index'
+import { Route as AuthenticatedUsersUserIdRouteImport } from './routes/_authenticated/users/$userId'
 import { Route as AuthenticatedStudentsAddStudentRouteImport } from './routes/_authenticated/students/add-student'
 import { Route as AuthenticatedStudentsStudentIdRouteImport } from './routes/_authenticated/students/$studentId'
 
@@ -55,11 +56,6 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedUsersRoute = AuthenticatedUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
@@ -133,10 +129,21 @@ const AuthenticatedAddStaffRoute = AuthenticatedAddStaffRouteImport.update({
   path: '/add-staff',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedUsersIndexRoute = AuthenticatedUsersIndexRouteImport.update({
+  id: '/users/',
+  path: '/users/',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedStudentsIndexRoute =
   AuthenticatedStudentsIndexRouteImport.update({
     id: '/students/',
     path: '/students/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedUsersUserIdRoute =
+  AuthenticatedUsersUserIdRouteImport.update({
+    id: '/users/$userId',
+    path: '/users/$userId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedStudentsAddStudentRoute =
@@ -171,10 +178,11 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AuthenticatedReportsRoute
   '/roles': typeof AuthenticatedRolesRoute
   '/settings': typeof AuthenticatedSettingsRoute
-  '/users': typeof AuthenticatedUsersRoute
   '/students/$studentId': typeof AuthenticatedStudentsStudentIdRoute
   '/students/add-student': typeof AuthenticatedStudentsAddStudentRoute
+  '/users/$userId': typeof AuthenticatedUsersUserIdRoute
   '/students/': typeof AuthenticatedStudentsIndexRoute
+  '/users/': typeof AuthenticatedUsersIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -194,11 +202,12 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthenticatedReportsRoute
   '/roles': typeof AuthenticatedRolesRoute
   '/settings': typeof AuthenticatedSettingsRoute
-  '/users': typeof AuthenticatedUsersRoute
   '/': typeof AuthenticatedIndexRoute
   '/students/$studentId': typeof AuthenticatedStudentsStudentIdRoute
   '/students/add-student': typeof AuthenticatedStudentsAddStudentRoute
+  '/users/$userId': typeof AuthenticatedUsersUserIdRoute
   '/students': typeof AuthenticatedStudentsIndexRoute
+  '/users': typeof AuthenticatedUsersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -220,11 +229,12 @@ export interface FileRoutesById {
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/roles': typeof AuthenticatedRolesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
-  '/_authenticated/users': typeof AuthenticatedUsersRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/students/$studentId': typeof AuthenticatedStudentsStudentIdRoute
   '/_authenticated/students/add-student': typeof AuthenticatedStudentsAddStudentRoute
+  '/_authenticated/users/$userId': typeof AuthenticatedUsersUserIdRoute
   '/_authenticated/students/': typeof AuthenticatedStudentsIndexRoute
+  '/_authenticated/users/': typeof AuthenticatedUsersIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -247,10 +257,11 @@ export interface FileRouteTypes {
     | '/reports'
     | '/roles'
     | '/settings'
-    | '/users'
     | '/students/$studentId'
     | '/students/add-student'
+    | '/users/$userId'
     | '/students/'
+    | '/users/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -270,11 +281,12 @@ export interface FileRouteTypes {
     | '/reports'
     | '/roles'
     | '/settings'
-    | '/users'
     | '/'
     | '/students/$studentId'
     | '/students/add-student'
+    | '/users/$userId'
     | '/students'
+    | '/users'
   id:
     | '__root__'
     | '/_authenticated'
@@ -295,11 +307,12 @@ export interface FileRouteTypes {
     | '/_authenticated/reports'
     | '/_authenticated/roles'
     | '/_authenticated/settings'
-    | '/_authenticated/users'
     | '/_authenticated/'
     | '/_authenticated/students/$studentId'
     | '/_authenticated/students/add-student'
+    | '/_authenticated/users/$userId'
     | '/_authenticated/students/'
+    | '/_authenticated/users/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -344,13 +357,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/users': {
-      id: '/_authenticated/users'
-      path: '/users'
-      fullPath: '/users'
-      preLoaderRoute: typeof AuthenticatedUsersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/settings': {
@@ -451,11 +457,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAddStaffRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/users/': {
+      id: '/_authenticated/users/'
+      path: '/users'
+      fullPath: '/users/'
+      preLoaderRoute: typeof AuthenticatedUsersIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/students/': {
       id: '/_authenticated/students/'
       path: '/students'
       fullPath: '/students/'
       preLoaderRoute: typeof AuthenticatedStudentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/users/$userId': {
+      id: '/_authenticated/users/$userId'
+      path: '/users/$userId'
+      fullPath: '/users/$userId'
+      preLoaderRoute: typeof AuthenticatedUsersUserIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/students/add-student': {
@@ -490,11 +510,12 @@ interface AuthenticatedRouteChildren {
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedRolesRoute: typeof AuthenticatedRolesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
-  AuthenticatedUsersRoute: typeof AuthenticatedUsersRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedStudentsStudentIdRoute: typeof AuthenticatedStudentsStudentIdRoute
   AuthenticatedStudentsAddStudentRoute: typeof AuthenticatedStudentsAddStudentRoute
+  AuthenticatedUsersUserIdRoute: typeof AuthenticatedUsersUserIdRoute
   AuthenticatedStudentsIndexRoute: typeof AuthenticatedStudentsIndexRoute
+  AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -512,11 +533,12 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedRolesRoute: AuthenticatedRolesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
-  AuthenticatedUsersRoute: AuthenticatedUsersRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedStudentsStudentIdRoute: AuthenticatedStudentsStudentIdRoute,
   AuthenticatedStudentsAddStudentRoute: AuthenticatedStudentsAddStudentRoute,
+  AuthenticatedUsersUserIdRoute: AuthenticatedUsersUserIdRoute,
   AuthenticatedStudentsIndexRoute: AuthenticatedStudentsIndexRoute,
+  AuthenticatedUsersIndexRoute: AuthenticatedUsersIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["multipart"] }
 async-graphql = "7"
 async-graphql-axum = "7"
 sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "migrate", "uuid"] }
@@ -14,7 +14,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
 dotenvy = "0.15"
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
 tower = "0.5"
 chrono = "0.4"
 serde_json = "1"
@@ -22,3 +22,4 @@ uuid = { version = "1", features = ["v4", "serde"] }
 bcrypt = "0.16"
 rand = "0.8"
 tempfile = "3"
+image = "0.25"

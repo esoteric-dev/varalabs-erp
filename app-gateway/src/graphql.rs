@@ -28,6 +28,7 @@ pub struct Student {
     pub admission_date: Option<String>,
     pub login_email: Option<String>,
     pub user_id: Option<String>,
+    pub photo_url: Option<String>,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
@@ -130,6 +131,7 @@ pub struct User {
     pub email: String,
     pub system_role: String,
     pub phone: Option<String>,
+    pub photo_url: Option<String>,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
@@ -344,6 +346,7 @@ pub struct StaffDetail {
     pub bank_ifsc: Option<String>,
     pub bank_branch: Option<String>,
     pub date_of_joining: Option<String>,
+    pub personal_email: Option<String>,
 }
 
 #[derive(Debug, SimpleObject)]
@@ -351,6 +354,7 @@ pub struct OnboardStaffResponse {
     pub user: User,
     pub employee_id: String,
     pub generated_password: Option<String>,
+    pub generated_email: Option<String>,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
@@ -362,6 +366,18 @@ pub struct OrgUser {
     pub phone: Option<String>,
     pub role_names: Option<String>,
     pub employee_id: Option<String>,
+    pub photo_url: Option<String>,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct OfferLetterTemplate {
+    pub id: String,
+    pub organisation_id: String,
+    pub name: String,
+    pub content: String,
+    pub is_default: bool,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
@@ -421,6 +437,47 @@ pub struct Subject {
     pub name: String,
     pub class_name: Option<String>,
     pub status: String,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct Exam {
+    pub id: String,
+    pub name: String,
+    pub class_name: String,
+    pub exam_date: Option<String>,
+    pub total_marks: i32,
+    pub status: String,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct StudentMark {
+    pub id: String,
+    pub student_id: String,
+    pub subject_id: String,
+    pub subject_name: String,
+    pub exam_id: Option<String>,
+    pub exam_name: Option<String>,
+    pub marks_obtained: f64,
+    pub total_marks: f64,
+    pub remarks: Option<String>,
+}
+
+#[derive(Debug, InputObject)]
+pub struct AddStudentMarkInput {
+    pub student_id: String,
+    pub subject_id: String,
+    pub exam_id: Option<String>,
+    pub marks_obtained: f64,
+    pub total_marks: Option<f64>,
+    pub remarks: Option<String>,
+}
+
+#[derive(Debug, InputObject)]
+pub struct CreateExamInput {
+    pub name: String,
+    pub class_name: String,
+    pub exam_date: Option<String>,
+    pub total_marks: Option<i32>,
 }
 
 #[derive(Debug, InputObject)]
@@ -629,6 +686,7 @@ pub struct CreateOrgResponse {
 pub struct CreateUserResponse {
     pub user: User,
     pub generated_password: Option<String>,
+    pub generated_email: Option<String>,
 }
 
 #[derive(Debug, SimpleObject)]
@@ -684,6 +742,32 @@ fn generate_random_password() -> String {
         .collect()
 }
 
+/// Convert a name like "John Doe" into a username like "john.doe".
+/// Strips non-alphanumeric chars (except dots), collapses dots, lowercases.
+fn sanitize_username(name: &str) -> String {
+    let s: String = name
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '.' })
+        .collect();
+    // Collapse consecutive dots and trim leading/trailing dots
+    let mut out = String::new();
+    let mut last_dot = false;
+    for c in s.chars() {
+        if c == '.' {
+            if !last_dot && !out.is_empty() {
+                out.push('.');
+            }
+            last_dot = true;
+        } else {
+            out.push(c);
+            last_dot = false;
+        }
+    }
+    out.trim_end_matches('.').to_string()
+}
+
 fn extract_slug_from_email(email: &str) -> Option<String> {
     let domain = email.split('@').nth(1)?;
     let slug = domain.split('.').next()?;
@@ -715,7 +799,7 @@ impl QueryRoot {
         // If org_id is empty (tenant_admin on root domain), skip org membership check
         if user_ctx.org_id.is_empty() {
             let user = sqlx::query_as::<_, User>(
-                "SELECT id::text, name, email, system_role, phone FROM users WHERE id = $1",
+                "SELECT id::text, name, email, system_role, phone, photo_url FROM users WHERE id = $1",
             )
             .bind(user_id)
             .fetch_one(pool)
@@ -758,7 +842,11 @@ impl QueryRoot {
         }
 
         let user = sqlx::query_as::<_, User>(
-            "SELECT id::text, name, email, system_role, phone FROM users WHERE id = $1",
+            "SELECT u.id::text, u.name, u.email, u.system_role, u.phone,
+                    COALESCE(u.photo_url, s.photo_url) AS photo_url
+             FROM users u
+             LEFT JOIN students s ON s.user_id = u.id
+             WHERE u.id = $1",
         )
         .bind(user_id)
         .fetch_one(pool)
@@ -789,7 +877,7 @@ impl QueryRoot {
         let students = execute_in_context(pool, &tenant_id, &org_id, |conn| {
             Box::pin(async move {
                 let rows = sqlx::query_as::<_, Student>(
-                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text FROM students s LEFT JOIN users u ON u.id = s.user_id",
+                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text, s.photo_url FROM students s LEFT JOIN users u ON u.id = s.user_id",
                 )
                 .fetch_all(conn)
                 .await?;
@@ -844,16 +932,47 @@ impl QueryRoot {
     }
 
     /// Fetch a single student by ID.
+    /// Students can view their own record; others need students.view permission.
     async fn student(&self, ctx: &Context<'_>, id: String) -> Result<Option<Student>> {
-        let user_ctx = require_permission(ctx, "students.view")?;
+        let user_ctx = require_auth(ctx)?;
         let pool = ctx.data::<PgPool>()?;
         let tenant_id = user_ctx.tenant_id.clone();
         let org_id = user_ctx.org_id.clone();
 
+        // Check if the requesting user IS this student (allow self-access)
+        let is_own_record = {
+            let uid = user_ctx.user_id.clone();
+            let sid = id.clone();
+            let own: Option<bool> = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+                Box::pin(async move {
+                    let exists: Option<bool> = sqlx::query_scalar(
+                        "SELECT EXISTS(SELECT 1 FROM students WHERE id = $1::uuid AND user_id = $2::uuid)",
+                    )
+                    .bind(&sid)
+                    .bind(&uid)
+                    .fetch_optional(conn)
+                    .await?;
+                    Ok(exists)
+                })
+            })
+            .await
+            .map_err(|e| e.extend())?;
+            own.unwrap_or(false)
+        };
+
+        if !is_own_record && !user_ctx.permissions.contains("students.view") && user_ctx.system_role != SystemRole::Superadmin {
+            return Err(
+                async_graphql::Error::new("Access denied: missing permission 'students.view'")
+                    .extend_with(|_, ext: &mut async_graphql::ErrorExtensionValues| {
+                        ext.set("code", "FORBIDDEN");
+                    }),
+            );
+        }
+
         let student = execute_in_context(pool, &tenant_id, &org_id, |conn| {
             Box::pin(async move {
                 let row = sqlx::query_as::<_, Student>(
-                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
+                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text, s.photo_url FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
                 )
                 .bind(&id)
                 .fetch_optional(conn)
@@ -878,7 +997,7 @@ impl QueryRoot {
         let student = execute_in_context(pool, &tenant_id, &org_id, |conn| {
             Box::pin(async move {
                 let row = sqlx::query_as::<_, Student>(
-                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.user_id = $1::uuid",
+                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text, s.photo_url FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.user_id = $1::uuid",
                 )
                 .bind(&uid)
                 .fetch_optional(conn)
@@ -911,6 +1030,43 @@ impl QueryRoot {
 
         let next_seq = current_seq.unwrap_or(0) + 1;
         Ok(format!("ADM-{}-{:04}", year, next_seq))
+    }
+
+    /// Preview the login email that would be auto-generated for a given name.
+    /// Returns the unique email including any numeric suffix if the base is taken.
+    async fn preview_login_email(&self, ctx: &Context<'_>, name: String) -> Result<String> {
+        let user_ctx = require_permission(ctx, "users.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let org_slug: String = sqlx::query_scalar(
+            "SELECT slug FROM organisations WHERE id = $1::uuid",
+        )
+        .bind(&user_ctx.org_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching org slug: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        let username = sanitize_username(&name);
+        if username.is_empty() {
+            return Ok(format!("user@{}.com", org_slug));
+        }
+        let existing_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM users WHERE email LIKE $1",
+        )
+        .bind(format!("{}%@{}.com", username, org_slug))
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+        let email = if existing_count > 0 {
+            format!("{}{}@{}.com", username, existing_count + 1, org_slug)
+        } else {
+            format!("{}@{}.com", username, org_slug)
+        };
+        Ok(email)
     }
 
     /// List all tenants. Superadmin only.
@@ -1431,7 +1587,7 @@ impl QueryRoot {
                             date_of_birth::text, gender, blood_group, marital_status,
                             address, city, state, zip_code, country,
                             bank_account_name, bank_account_number, bank_name, bank_ifsc, bank_branch,
-                            date_of_joining::text
+                            date_of_joining::text, personal_email
                      FROM staff_details WHERE user_id = $1::uuid",
                 )
                 .bind(&uid)
@@ -1513,13 +1669,14 @@ impl QueryRoot {
         let rows = sqlx::query_as::<_, OrgUser>(
             "SELECT u.id::text, u.name, u.email, u.system_role, u.phone,
                     STRING_AGG(r.name, ', ' ORDER BY r.name) AS role_names,
-                    uo.employee_id
+                    uo.employee_id,
+                    u.photo_url
              FROM user_organisations uo
              JOIN users u ON u.id = uo.user_id
              LEFT JOIN user_org_roles uor ON uor.user_id = u.id AND uor.organisation_id = uo.organisation_id
              LEFT JOIN roles r ON r.id = uor.role_id
              WHERE uo.organisation_id = $1
-             GROUP BY u.id, u.name, u.email, u.system_role, u.phone, uo.employee_id
+             GROUP BY u.id, u.name, u.email, u.system_role, u.phone, uo.employee_id, u.photo_url
              ORDER BY u.name",
         )
         .bind(org_uuid)
@@ -1531,6 +1688,80 @@ impl QueryRoot {
         })?;
 
         Ok(rows)
+    }
+
+    /// Fetch a single org user by ID (for detail page).
+    async fn org_user(&self, ctx: &Context<'_>, user_id: String) -> Result<Option<OrgUser>> {
+        let user_ctx = require_permission(ctx, "users.view")?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let org_uuid = uuid::Uuid::parse_str(&user_ctx.org_id)
+            .map_err(|_| async_graphql::Error::new("Invalid org id"))?;
+
+        let user = sqlx::query_as::<_, OrgUser>(
+            "SELECT u.id::text, u.name, u.email, u.system_role, u.phone,
+                    STRING_AGG(r.name, ', ' ORDER BY r.name) AS role_names,
+                    uo.employee_id,
+                    u.photo_url
+             FROM user_organisations uo
+             JOIN users u ON u.id = uo.user_id
+             LEFT JOIN user_org_roles uor ON uor.user_id = u.id AND uor.organisation_id = uo.organisation_id
+             LEFT JOIN roles r ON r.id = uor.role_id
+             WHERE uo.organisation_id = $1 AND u.id = $2::uuid
+             GROUP BY u.id, u.name, u.email, u.system_role, u.phone, uo.employee_id, u.photo_url",
+        )
+        .bind(org_uuid)
+        .bind(&user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching org user: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        Ok(user)
+    }
+
+    /// List offer letter templates for the current org.
+    async fn offer_letter_templates(&self, ctx: &Context<'_>) -> Result<Vec<OfferLetterTemplate>> {
+        let user_ctx = require_permission(ctx, "users.view")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let templates = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let rows = sqlx::query_as::<_, OfferLetterTemplate>(
+                    "SELECT id::text, organisation_id::text, name, content, is_default,
+                            created_at::text, updated_at::text
+                     FROM offer_letter_templates
+                     ORDER BY is_default DESC, updated_at DESC",
+                )
+                .fetch_all(conn)
+                .await?;
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(templates)
+    }
+
+    /// Get the built-in default offer letter template content.
+    async fn default_offer_letter_content(&self, ctx: &Context<'_>) -> Result<String> {
+        let _user_ctx = require_permission(ctx, "users.view")?;
+        Ok(crate::offer_letter::default_template_content())
+    }
+
+    /// Get the default offer letter terms (plain text items for the structured editor).
+    async fn default_offer_letter_terms(
+        &self,
+        ctx: &Context<'_>,
+        #[graphql(default = "offer")] letter_type: String,
+    ) -> Result<Vec<String>> {
+        let _user_ctx = require_permission(ctx, "users.view")?;
+        Ok(crate::offer_letter::get_default_terms(&letter_type))
     }
 
     // ── Reports ─────────────────────────────────────────────────────────────
@@ -2078,7 +2309,7 @@ impl QueryRoot {
         let admin_email = format!("admin@{}.com", slug);
 
         let user = sqlx::query_as::<_, User>(
-            "SELECT u.id::text, u.name, u.email, u.system_role, u.phone
+            "SELECT u.id::text, u.name, u.email, u.system_role, u.phone, u.photo_url
              FROM users u
              JOIN user_organisations uo ON uo.user_id = u.id
              WHERE u.email = $1 AND uo.organisation_id = $2",
@@ -2472,6 +2703,167 @@ impl QueryRoot {
 
         Ok(performers)
     }
+
+    /// Get marks for a specific student, optionally filtered by exam.
+    async fn student_marks(
+        &self,
+        ctx: &Context<'_>,
+        student_id: String,
+        exam_id: Option<String>,
+    ) -> Result<Vec<StudentMark>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let rows = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let eid = exam_id.clone();
+            let sid = student_id.clone();
+            Box::pin(async move {
+                let rows = match eid {
+                    Some(ref e) => {
+                        sqlx::query_as::<_, StudentMark>(
+                            "SELECT sm.id::text, sm.student_id::text, sm.subject_id::text,
+                                    sub.name AS subject_name,
+                                    sm.exam_id::text, ex.name AS exam_name,
+                                    sm.marks_obtained::float8, sm.total_marks::float8,
+                                    sm.remarks
+                             FROM student_marks sm
+                             JOIN subjects sub ON sub.id = sm.subject_id
+                             LEFT JOIN exams ex ON ex.id = sm.exam_id
+                             WHERE sm.student_id = $1::uuid AND sm.exam_id = $2::uuid
+                             ORDER BY sub.name",
+                        )
+                        .bind(&sid)
+                        .bind(e)
+                        .fetch_all(conn)
+                        .await?
+                    }
+                    None => {
+                        sqlx::query_as::<_, StudentMark>(
+                            "SELECT sm.id::text, sm.student_id::text, sm.subject_id::text,
+                                    sub.name AS subject_name,
+                                    sm.exam_id::text, ex.name AS exam_name,
+                                    sm.marks_obtained::float8, sm.total_marks::float8,
+                                    sm.remarks
+                             FROM student_marks sm
+                             JOIN subjects sub ON sub.id = sm.subject_id
+                             LEFT JOIN exams ex ON ex.id = sm.exam_id
+                             WHERE sm.student_id = $1::uuid
+                             ORDER BY ex.name, sub.name",
+                        )
+                        .bind(&sid)
+                        .fetch_all(conn)
+                        .await?
+                    }
+                };
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(rows)
+    }
+
+    /// Get marks for the currently logged-in student.
+    async fn my_marks(&self, ctx: &Context<'_>, exam_id: Option<String>) -> Result<Vec<StudentMark>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let uid = user_ctx.user_id.clone();
+
+        let rows = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let eid = exam_id.clone();
+            Box::pin(async move {
+                let rows = match eid {
+                    Some(ref e) => {
+                        sqlx::query_as::<_, StudentMark>(
+                            "SELECT sm.id::text, sm.student_id::text, sm.subject_id::text,
+                                    sub.name AS subject_name,
+                                    sm.exam_id::text, ex.name AS exam_name,
+                                    sm.marks_obtained::float8, sm.total_marks::float8,
+                                    sm.remarks
+                             FROM student_marks sm
+                             JOIN subjects sub ON sub.id = sm.subject_id
+                             LEFT JOIN exams ex ON ex.id = sm.exam_id
+                             JOIN students s ON s.id = sm.student_id
+                             WHERE s.user_id = $1::uuid AND sm.exam_id = $2::uuid
+                             ORDER BY sub.name",
+                        )
+                        .bind(&uid)
+                        .bind(e)
+                        .fetch_all(conn)
+                        .await?
+                    }
+                    None => {
+                        sqlx::query_as::<_, StudentMark>(
+                            "SELECT sm.id::text, sm.student_id::text, sm.subject_id::text,
+                                    sub.name AS subject_name,
+                                    sm.exam_id::text, ex.name AS exam_name,
+                                    sm.marks_obtained::float8, sm.total_marks::float8,
+                                    sm.remarks
+                             FROM student_marks sm
+                             JOIN subjects sub ON sub.id = sm.subject_id
+                             LEFT JOIN exams ex ON ex.id = sm.exam_id
+                             JOIN students s ON s.id = sm.student_id
+                             WHERE s.user_id = $1::uuid
+                             ORDER BY ex.name, sub.name",
+                        )
+                        .bind(&uid)
+                        .fetch_all(conn)
+                        .await?
+                    }
+                };
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(rows)
+    }
+
+    /// List exams, optionally filtered by class.
+    async fn exams(&self, ctx: &Context<'_>, class_name: Option<String>) -> Result<Vec<Exam>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let rows = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let cn = class_name.clone();
+            Box::pin(async move {
+                let rows = match cn {
+                    Some(ref c) => {
+                        sqlx::query_as::<_, Exam>(
+                            "SELECT id::text, name, class_name, exam_date::text, total_marks, status
+                             FROM exams WHERE class_name = $1
+                             ORDER BY exam_date DESC NULLS LAST",
+                        )
+                        .bind(c)
+                        .fetch_all(conn)
+                        .await?
+                    }
+                    None => {
+                        sqlx::query_as::<_, Exam>(
+                            "SELECT id::text, name, class_name, exam_date::text, total_marks, status
+                             FROM exams
+                             ORDER BY exam_date DESC NULLS LAST",
+                        )
+                        .fetch_all(conn)
+                        .await?
+                    }
+                };
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(rows)
+    }
 }
 
 // ── Mutation ─────────────────────────────────────────────────────────────────
@@ -2649,6 +3041,7 @@ impl MutationRoot {
             email: user_row.email,
             system_role: user_row.system_role,
             phone: user_row.phone,
+            photo_url: None,
         };
 
         Ok(LoginResponse {
@@ -2656,6 +3049,378 @@ impl MutationRoot {
             refresh_token,
             user,
         })
+    }
+
+    // ── Update My Profile ─────────────────────────────────────────────────────
+
+    /// Update the current user's profile (phone, name). Any authenticated user can call this.
+    async fn update_my_profile(
+        &self,
+        ctx: &Context<'_>,
+        name: Option<String>,
+        phone: Option<String>,
+    ) -> Result<User> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let user_id = uuid::Uuid::parse_str(&user_ctx.user_id)
+            .map_err(|_| async_graphql::Error::new("Invalid user id"))?;
+
+        // Build dynamic SET clause
+        let mut sets: Vec<String> = Vec::new();
+        let mut param_idx = 1u32;
+
+        if let Some(ref n) = name {
+            if n.trim().is_empty() {
+                return Err(async_graphql::Error::new("Name cannot be empty"));
+            }
+            param_idx += 1;
+            sets.push(format!("name = ${param_idx}"));
+        }
+        if let Some(ref _p) = phone {
+            param_idx += 1;
+            sets.push(format!("phone = ${param_idx}"));
+        }
+
+        if sets.is_empty() {
+            return Err(async_graphql::Error::new("No fields to update"));
+        }
+
+        let sql = format!(
+            "UPDATE users SET {} WHERE id = $1 RETURNING id::text, name, email, system_role, phone, photo_url",
+            sets.join(", ")
+        );
+
+        let mut query = sqlx::query_as::<_, User>(&sql).bind(user_id);
+
+        if let Some(ref n) = name {
+            query = query.bind(n.trim());
+        }
+        if let Some(ref p) = phone {
+            let phone_val = if p.trim().is_empty() { None } else { Some(p.trim()) };
+            query = query.bind(phone_val);
+        }
+
+        let user = query.fetch_one(pool).await.map_err(|e| {
+            tracing::error!("DB error updating profile: {e}");
+            async_graphql::Error::new("Failed to update profile")
+        })?;
+
+        tracing::info!(user_id = %user_ctx.user_id, "Profile updated");
+
+        Ok(user)
+    }
+
+    /// Admin updates any user's basic info. Requires `users.manage` permission.
+    async fn update_user(
+        &self,
+        ctx: &Context<'_>,
+        user_id: String,
+        name: Option<String>,
+        email: Option<String>,
+        phone: Option<String>,
+    ) -> Result<User> {
+        let _user_ctx = require_permission(ctx, "users.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let target_uuid = uuid::Uuid::parse_str(&user_id)
+            .map_err(|_| async_graphql::Error::new("Invalid user id"))?;
+
+        let mut sets: Vec<String> = Vec::new();
+        let mut param_idx = 1u32;
+
+        if let Some(ref n) = name {
+            if n.trim().is_empty() {
+                return Err(async_graphql::Error::new("Name cannot be empty"));
+            }
+            param_idx += 1;
+            sets.push(format!("name = ${param_idx}"));
+        }
+        if let Some(ref _e) = email {
+            param_idx += 1;
+            sets.push(format!("email = ${param_idx}"));
+        }
+        if let Some(ref _p) = phone {
+            param_idx += 1;
+            sets.push(format!("phone = ${param_idx}"));
+        }
+
+        if sets.is_empty() {
+            return Err(async_graphql::Error::new("No fields to update"));
+        }
+
+        let sql = format!(
+            "UPDATE users SET {} WHERE id = $1 RETURNING id::text, name, email, system_role, phone, photo_url",
+            sets.join(", ")
+        );
+
+        let mut query = sqlx::query_as::<_, User>(&sql).bind(target_uuid);
+
+        if let Some(ref n) = name {
+            query = query.bind(n.trim());
+        }
+        if let Some(ref e) = email {
+            query = query.bind(e.trim());
+        }
+        if let Some(ref p) = phone {
+            let phone_val = if p.trim().is_empty() { None } else { Some(p.trim()) };
+            query = query.bind(phone_val);
+        }
+
+        let user = query.fetch_one(pool).await.map_err(|e| {
+            tracing::error!("DB error updating user: {e}");
+            async_graphql::Error::new("Failed to update user")
+        })?;
+
+        tracing::info!(user_id = %user_id, "User updated by admin");
+
+        Ok(user)
+    }
+
+    /// Admin upserts staff details for any user. Requires `users.manage` permission.
+    async fn update_staff_details(
+        &self,
+        ctx: &Context<'_>,
+        user_id: String,
+        designation: Option<String>,
+        department: Option<String>,
+        qualification: Option<String>,
+        date_of_birth: Option<String>,
+        gender: Option<String>,
+        blood_group: Option<String>,
+        marital_status: Option<String>,
+        address: Option<String>,
+        city: Option<String>,
+        state: Option<String>,
+        zip_code: Option<String>,
+        country: Option<String>,
+        bank_account_name: Option<String>,
+        bank_account_number: Option<String>,
+        bank_name: Option<String>,
+        bank_ifsc: Option<String>,
+        bank_branch: Option<String>,
+        date_of_joining: Option<String>,
+        personal_email: Option<String>,
+    ) -> Result<StaffDetail> {
+        let user_ctx = require_permission(ctx, "users.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let detail = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let uid = user_id.clone();
+            let t_id = tenant_id.clone();
+            let o_id = org_id.clone();
+            let des = designation.clone();
+            let dep = department.clone();
+            let qual = qualification.clone();
+            let dob = date_of_birth.clone();
+            let gen = gender.clone();
+            let bg = blood_group.clone();
+            let ms = marital_status.clone();
+            let addr = address.clone();
+            let c = city.clone();
+            let s = state.clone();
+            let zc = zip_code.clone();
+            let co = country.clone();
+            let ban = bank_account_name.clone();
+            let banum = bank_account_number.clone();
+            let bname = bank_name.clone();
+            let bifsc = bank_ifsc.clone();
+            let bbranch = bank_branch.clone();
+            let doj = date_of_joining.clone();
+            let pemail = personal_email.clone();
+
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, StaffDetail>(
+                    "INSERT INTO staff_details (
+                        user_id, tenant_id, organisation_id,
+                        designation, department, qualification,
+                        date_of_birth, gender, blood_group, marital_status,
+                        address, city, state, zip_code, country,
+                        bank_account_name, bank_account_number, bank_name, bank_ifsc, bank_branch,
+                        date_of_joining, personal_email
+                    ) VALUES (
+                        $1::uuid, $2::uuid, $3::uuid,
+                        $4, $5, $6, $7::date, $8, $9, $10,
+                        $11, $12, $13, $14, $15,
+                        $16, $17, $18, $19, $20, $21::date, $22
+                    )
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        designation = COALESCE($4, staff_details.designation),
+                        department = COALESCE($5, staff_details.department),
+                        qualification = COALESCE($6, staff_details.qualification),
+                        date_of_birth = COALESCE($7::date, staff_details.date_of_birth),
+                        gender = COALESCE($8, staff_details.gender),
+                        blood_group = COALESCE($9, staff_details.blood_group),
+                        marital_status = COALESCE($10, staff_details.marital_status),
+                        address = COALESCE($11, staff_details.address),
+                        city = COALESCE($12, staff_details.city),
+                        state = COALESCE($13, staff_details.state),
+                        zip_code = COALESCE($14, staff_details.zip_code),
+                        country = COALESCE($15, staff_details.country),
+                        bank_account_name = COALESCE($16, staff_details.bank_account_name),
+                        bank_account_number = COALESCE($17, staff_details.bank_account_number),
+                        bank_name = COALESCE($18, staff_details.bank_name),
+                        bank_ifsc = COALESCE($19, staff_details.bank_ifsc),
+                        bank_branch = COALESCE($20, staff_details.bank_branch),
+                        date_of_joining = COALESCE($21::date, staff_details.date_of_joining),
+                        personal_email = COALESCE($22, staff_details.personal_email)
+                    RETURNING user_id::text, designation, department, qualification,
+                        date_of_birth::text, gender, blood_group, marital_status,
+                        address, city, state, zip_code, country,
+                        bank_account_name, bank_account_number, bank_name, bank_ifsc, bank_branch,
+                        date_of_joining::text, personal_email",
+                )
+                .bind(&uid)
+                .bind(&t_id)
+                .bind(&o_id)
+                .bind(des.as_deref())
+                .bind(dep.as_deref())
+                .bind(qual.as_deref())
+                .bind(dob.as_deref())
+                .bind(gen.as_deref())
+                .bind(bg.as_deref())
+                .bind(ms.as_deref())
+                .bind(addr.as_deref())
+                .bind(c.as_deref())
+                .bind(s.as_deref())
+                .bind(zc.as_deref())
+                .bind(co.as_deref())
+                .bind(ban.as_deref())
+                .bind(banum.as_deref())
+                .bind(bname.as_deref())
+                .bind(bifsc.as_deref())
+                .bind(bbranch.as_deref())
+                .bind(doj.as_deref())
+                .bind(pemail.as_deref())
+                .fetch_one(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        tracing::info!(user_id = %user_id, "Staff details updated by admin");
+
+        Ok(detail)
+    }
+
+    /// Admin updates any student's details. Requires `students.create` permission.
+    async fn update_student(
+        &self,
+        ctx: &Context<'_>,
+        student_id: String,
+        name: Option<String>,
+        class_name: Option<String>,
+        gender: Option<String>,
+        date_of_birth: Option<String>,
+        blood_group: Option<String>,
+        religion: Option<String>,
+        email: Option<String>,
+        phone: Option<String>,
+        admission_number: Option<String>,
+        admission_date: Option<String>,
+    ) -> Result<Student> {
+        let user_ctx = require_permission(ctx, "students.create")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let student = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let sid = student_id.clone();
+            let v_name = name.clone();
+            let v_class = class_name.clone();
+            let v_gender = gender.clone();
+            let v_dob = date_of_birth.clone();
+            let v_blood = blood_group.clone();
+            let v_religion = religion.clone();
+            let v_email = email.clone();
+            let v_phone = phone.clone();
+            let v_admnum = admission_number.clone();
+            let v_admdate = admission_date.clone();
+
+            Box::pin(async move {
+                let mut sets: Vec<String> = Vec::new();
+                let mut param_idx = 1u32; // $1 is the student_id
+
+                if v_name.is_some() { param_idx += 1; sets.push(format!("name = ${param_idx}")); }
+                if v_class.is_some() { param_idx += 1; sets.push(format!("class_name = ${param_idx}")); }
+                if v_gender.is_some() { param_idx += 1; sets.push(format!("gender = ${param_idx}")); }
+                if v_dob.is_some() { param_idx += 1; sets.push(format!("date_of_birth = ${param_idx}::date")); }
+                if v_blood.is_some() { param_idx += 1; sets.push(format!("blood_group = ${param_idx}")); }
+                if v_religion.is_some() { param_idx += 1; sets.push(format!("religion = ${param_idx}")); }
+                if v_email.is_some() { param_idx += 1; sets.push(format!("email = ${param_idx}")); }
+                if v_phone.is_some() { param_idx += 1; sets.push(format!("phone = ${param_idx}")); }
+                if v_admnum.is_some() { param_idx += 1; sets.push(format!("admission_number = ${param_idx}")); }
+                if v_admdate.is_some() { param_idx += 1; sets.push(format!("admission_date = ${param_idx}::date")); }
+
+                if sets.is_empty() {
+                    return Err(crate::errors::AppError::Validation("No fields to update".into()));
+                }
+
+                let sql = format!(
+                    "UPDATE students SET {} WHERE id = $1::uuid \
+                     RETURNING id::text, name, class_name, gender, date_of_birth::text, \
+                     blood_group, religion, email, phone, admission_number, \
+                     admission_date::text, \
+                     (SELECT u.email FROM users u WHERE u.id = students.user_id) AS login_email, \
+                     user_id::text, photo_url",
+                    sets.join(", ")
+                );
+
+                let mut query = sqlx::query_as::<_, Student>(&sql).bind(&sid);
+
+                // Bind in the same order as sets were built
+                if let Some(ref v) = v_name { query = query.bind(v.trim()); }
+                if let Some(ref v) = v_class { query = query.bind(v.trim()); }
+                if let Some(ref v) = v_gender {
+                    let val = if v.trim().is_empty() { None } else { Some(v.trim().to_string()) };
+                    query = query.bind(val);
+                }
+                if let Some(ref v) = v_dob {
+                    let val = if v.trim().is_empty() { None } else { Some(v.trim().to_string()) };
+                    query = query.bind(val);
+                }
+                if let Some(ref v) = v_blood {
+                    let val = if v.trim().is_empty() { None } else { Some(v.trim().to_string()) };
+                    query = query.bind(val);
+                }
+                if let Some(ref v) = v_religion {
+                    let val = if v.trim().is_empty() { None } else { Some(v.trim().to_string()) };
+                    query = query.bind(val);
+                }
+                if let Some(ref v) = v_email {
+                    let val = if v.trim().is_empty() { None } else { Some(v.trim().to_string()) };
+                    query = query.bind(val);
+                }
+                if let Some(ref v) = v_phone {
+                    let val = if v.trim().is_empty() { None } else { Some(v.trim().to_string()) };
+                    query = query.bind(val);
+                }
+                if let Some(ref v) = v_admnum {
+                    let val = if v.trim().is_empty() { None } else { Some(v.trim().to_string()) };
+                    query = query.bind(val);
+                }
+                if let Some(ref v) = v_admdate {
+                    let val = if v.trim().is_empty() { None } else { Some(v.trim().to_string()) };
+                    query = query.bind(val);
+                }
+
+                let row = query.fetch_one(conn).await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error updating student: {e}");
+            async_graphql::Error::new("Failed to update student")
+        })?;
+
+        tracing::info!(student_id = %student_id, "Student updated by admin");
+
+        Ok(student)
     }
 
     // ── Signup (public) ──────────────────────────────────────────────────────
@@ -2727,7 +3492,7 @@ impl MutationRoot {
         let user = sqlx::query_as::<_, User>(
             "INSERT INTO users (name, email, password_hash, system_role, phone, tenant_id)
              VALUES ($1, $2, $3, 'tenant_admin', NULL, $4::uuid)
-             RETURNING id::text, name, email, system_role, phone",
+             RETURNING id::text, name, email, system_role, phone, photo_url",
         )
         .bind(&name)
         .bind(&email)
@@ -3299,7 +4064,7 @@ impl MutationRoot {
                      VALUES (current_setting('app.current_org', true)::uuid,
                              current_setting('app.current_tenant', true)::uuid,
                              $1, $2)
-                     RETURNING id::text, name, class_name, gender, date_of_birth::text, blood_group, religion, email, phone, admission_number, admission_date::text, NULL::text AS login_email, user_id::text",
+                     RETURNING id::text, name, class_name, gender, date_of_birth::text, blood_group, religion, email, phone, admission_number, admission_date::text, NULL::text AS login_email, user_id::text, photo_url",
                 )
                 .bind(&name)
                 .bind(&class_name)
@@ -3323,7 +4088,7 @@ impl MutationRoot {
         &self,
         ctx: &Context<'_>,
         name: String,
-        email: String,
+        email: Option<String>,
         phone: Option<String>,
         system_role: Option<String>,
         password: Option<String>,
@@ -3362,6 +4127,40 @@ impl MutationRoot {
         let tenant_uuid = uuid::Uuid::parse_str(&user_ctx.tenant_id)
             .map_err(|_| async_graphql::Error::new("Invalid tenant id"))?;
 
+        // Auto-generate email if not provided: {sanitized_name}@{org_slug}.com
+        let mut generated_email_out: Option<String> = None;
+        let final_email = match email {
+            Some(ref e) if !e.is_empty() => e.clone(),
+            _ => {
+                let org_slug: String = sqlx::query_scalar(
+                    "SELECT slug FROM organisations WHERE id = $1::uuid",
+                )
+                .bind(&user_ctx.org_id)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!("DB error fetching org slug: {e}");
+                    async_graphql::Error::new("Internal server error")
+                })?;
+                let username = sanitize_username(&name);
+                let base_email = format!("{}@{}.com", username, org_slug);
+                let existing_count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM users WHERE email LIKE $1",
+                )
+                .bind(format!("{}%@{}.com", username, org_slug))
+                .fetch_one(pool)
+                .await
+                .unwrap_or(0);
+                let auto_email = if existing_count > 0 {
+                    format!("{}{}@{}.com", username, existing_count + 1, org_slug)
+                } else {
+                    base_email
+                };
+                generated_email_out = Some(auto_email.clone());
+                auto_email
+            }
+        };
+
         let mut tx = pool.begin().await.map_err(|e| {
             async_graphql::Error::new(format!("DB error: {e}"))
         })?;
@@ -3369,10 +4168,10 @@ impl MutationRoot {
         let user = sqlx::query_as::<_, User>(
             "INSERT INTO users (name, email, password_hash, system_role, phone, tenant_id)
              VALUES ($1, $2, $3, $4, $5, $6)
-             RETURNING id::text, name, email, system_role, phone",
+             RETURNING id::text, name, email, system_role, phone, photo_url",
         )
         .bind(&name)
-        .bind(&email)
+        .bind(&final_email)
         .bind(&hashed)
         .bind(&role)
         .bind(phone.as_deref())
@@ -3383,7 +4182,7 @@ impl MutationRoot {
             sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
                 async_graphql::Error::new(format!(
                     "A user with email '{}' already exists",
-                    email
+                    final_email
                 ))
             }
             _ => {
@@ -3432,10 +4231,11 @@ impl MutationRoot {
             async_graphql::Error::new(format!("DB error: {e}"))
         })?;
 
-        tracing::info!(user_id = %user.id, email = %email, "Created user");
+        tracing::info!(user_id = %user.id, email = %final_email, "Created user");
         Ok(CreateUserResponse {
             user,
             generated_password: generated_pw,
+            generated_email: generated_email_out,
         })
     }
 
@@ -3444,7 +4244,7 @@ impl MutationRoot {
         &self,
         ctx: &Context<'_>,
         name: String,
-        email: String,
+        email: Option<String>,
         phone: Option<String>,
         password: Option<String>,
         designation: Option<String>,
@@ -3465,6 +4265,7 @@ impl MutationRoot {
         bank_ifsc: Option<String>,
         bank_branch: Option<String>,
         date_of_joining: Option<String>,
+        personal_email: Option<String>,
         basic_pay: Option<i64>,
         allowances: Option<i64>,
         deductions: Option<i64>,
@@ -3493,6 +4294,41 @@ impl MutationRoot {
         let tenant_uuid = uuid::Uuid::parse_str(&user_ctx.tenant_id)
             .map_err(|_| async_graphql::Error::new("Invalid tenant id"))?;
 
+        // Auto-generate email if not provided: {sanitized_name}@{org_slug}.com
+        let mut generated_email_out: Option<String> = None;
+        let final_email = match email {
+            Some(ref e) if !e.is_empty() => e.clone(),
+            _ => {
+                let org_slug: String = sqlx::query_scalar(
+                    "SELECT slug FROM organisations WHERE id = $1::uuid",
+                )
+                .bind(&user_ctx.org_id)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!("DB error fetching org slug: {e}");
+                    async_graphql::Error::new("Internal server error")
+                })?;
+                let username = sanitize_username(&name);
+                let base_email = format!("{}@{}.com", username, org_slug);
+                // Check for uniqueness and append a number if needed
+                let existing_count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM users WHERE email LIKE $1",
+                )
+                .bind(format!("{}%@{}.com", username, org_slug))
+                .fetch_one(pool)
+                .await
+                .unwrap_or(0);
+                let auto_email = if existing_count > 0 {
+                    format!("{}{}@{}.com", username, existing_count + 1, org_slug)
+                } else {
+                    base_email
+                };
+                generated_email_out = Some(auto_email.clone());
+                auto_email
+            }
+        };
+
         let mut tx = pool.begin().await.map_err(|e| {
             async_graphql::Error::new(format!("DB error: {e}"))
         })?;
@@ -3501,10 +4337,10 @@ impl MutationRoot {
         let user = sqlx::query_as::<_, User>(
             "INSERT INTO users (name, email, password_hash, system_role, phone, tenant_id)
              VALUES ($1, $2, $3, 'user', $4, $5)
-             RETURNING id::text, name, email, system_role, phone",
+             RETURNING id::text, name, email, system_role, phone, photo_url",
         )
         .bind(&name)
-        .bind(&email)
+        .bind(&final_email)
         .bind(&hashed)
         .bind(phone.as_deref())
         .bind(tenant_uuid)
@@ -3512,7 +4348,7 @@ impl MutationRoot {
         .await
         .map_err(|e| match &e {
             sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
-                async_graphql::Error::new(format!("A user with email '{}' already exists", email))
+                async_graphql::Error::new(format!("A user with email '{}' already exists", final_email))
             }
             _ => {
                 tracing::error!("DB error creating user: {e}");
@@ -3563,9 +4399,9 @@ impl MutationRoot {
                 designation, department, qualification, date_of_birth, gender, blood_group,
                 marital_status, address, city, state, zip_code, country,
                 bank_account_name, bank_account_number, bank_name, bank_ifsc, bank_branch,
-                date_of_joining)
+                date_of_joining, personal_email)
              VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10,
-                     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::date)",
+                     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::date, $22)",
         )
         .bind(user_uuid)
         .bind(tenant_uuid)
@@ -3588,6 +4424,7 @@ impl MutationRoot {
         .bind(bank_ifsc.as_deref())
         .bind(bank_branch.as_deref())
         .bind(date_of_joining.as_deref())
+        .bind(personal_email.as_deref())
         .execute(&mut *tx)
         .await
         .map_err(|e| {
@@ -3621,11 +4458,12 @@ impl MutationRoot {
             async_graphql::Error::new(format!("DB error: {e}"))
         })?;
 
-        tracing::info!(user_id = %user.id, email = %email, employee_id = %employee_id, "Onboarded staff");
+        tracing::info!(user_id = %user.id, email = %final_email, employee_id = %employee_id, "Onboarded staff");
         Ok(OnboardStaffResponse {
             user,
             employee_id,
             generated_password: generated_pw,
+            generated_email: generated_email_out,
         })
     }
 
@@ -5095,7 +5933,7 @@ impl MutationRoot {
                 $1::uuid, $2::uuid, $3, $4,
                 $5, $6::date, $7, $8,
                 $9, $10, $11, $12::date
-            ) RETURNING id::text, name, class_name, gender, date_of_birth::text, blood_group, religion, email, phone, admission_number, admission_date::text, NULL::text AS login_email, NULL::text AS user_id"
+            ) RETURNING id::text, name, class_name, gender, date_of_birth::text, blood_group, religion, email, phone, admission_number, admission_date::text, NULL::text AS login_email, NULL::text AS user_id, photo_url"
         )
         .bind(&user_ctx.org_id)
         .bind(&user_ctx.tenant_id)
@@ -5417,7 +6255,7 @@ impl MutationRoot {
 
         // Fetch the student (RLS ensures tenant/org isolation)
         let student = sqlx::query_as::<_, Student>(
-            "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
+            "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text, s.photo_url FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
         )
         .bind(&student_id)
         .fetch_optional(&mut *tx)
@@ -5566,7 +6404,7 @@ impl MutationRoot {
 
         // Re-fetch so the student has updated user_id/login_email
         let updated_student = sqlx::query_as::<_, Student>(
-            "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
+            "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text, s.photo_url FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
         )
         .bind(&student_id)
         .fetch_one(pool)
@@ -5930,6 +6768,239 @@ impl MutationRoot {
                 .bind(&rmk)
                 .execute(conn)
                 .await?;
+                Ok(())
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(true)
+    }
+
+    // ── Exam & Marks Mutations ──────────────────────────────────────────────
+
+    /// Create an exam.
+    async fn create_exam(&self, ctx: &Context<'_>, input: CreateExamInput) -> Result<Exam> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let inner_t = tenant_id.clone();
+        let inner_o = org_id.clone();
+
+        let exam = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, Exam>(
+                    "INSERT INTO exams (tenant_id, organisation_id, name, class_name, exam_date, total_marks)
+                     VALUES ($1::uuid, $2::uuid, $3, $4, $5::date, COALESCE($6, 100))
+                     RETURNING id::text, name, class_name, exam_date::text, total_marks, status",
+                )
+                .bind(&inner_t)
+                .bind(&inner_o)
+                .bind(&input.name)
+                .bind(&input.class_name)
+                .bind(&input.exam_date)
+                .bind(&input.total_marks)
+                .fetch_one(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(exam)
+    }
+
+    /// Add or update a student's mark for a subject/exam.
+    async fn add_student_mark(&self, ctx: &Context<'_>, input: AddStudentMarkInput) -> Result<StudentMark> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let inner_t = tenant_id.clone();
+        let inner_o = org_id.clone();
+
+        let mark = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, StudentMark>(
+                    "INSERT INTO student_marks (tenant_id, organisation_id, student_id, subject_id, exam_id, marks_obtained, total_marks, remarks)
+                     VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, COALESCE($7, 100), $8)
+                     ON CONFLICT (student_id, subject_id, exam_id)
+                     DO UPDATE SET marks_obtained = EXCLUDED.marks_obtained, total_marks = EXCLUDED.total_marks, remarks = EXCLUDED.remarks
+                     RETURNING id::text, student_id::text, subject_id::text,
+                               (SELECT name FROM subjects WHERE id = student_marks.subject_id) AS subject_name,
+                               exam_id::text,
+                               (SELECT name FROM exams WHERE id = student_marks.exam_id) AS exam_name,
+                               marks_obtained::float8, total_marks::float8, remarks",
+                )
+                .bind(&inner_t)
+                .bind(&inner_o)
+                .bind(&input.student_id)
+                .bind(&input.subject_id)
+                .bind(&input.exam_id)
+                .bind(&input.marks_obtained)
+                .bind(&input.total_marks)
+                .bind(&input.remarks)
+                .fetch_one(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(mark)
+    }
+
+    /// Delete a student mark record.
+    async fn delete_student_mark(&self, ctx: &Context<'_>, id: String) -> Result<bool> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let mid = id.clone();
+            Box::pin(async move {
+                sqlx::query("DELETE FROM student_marks WHERE id = $1::uuid")
+                    .bind(&mid)
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(true)
+    }
+
+    // ── Offer Letter Template CRUD ──────────────────────────────────────────
+
+    /// Create a new offer letter template for the current org.
+    async fn create_offer_letter_template(
+        &self,
+        ctx: &Context<'_>,
+        name: String,
+        content: String,
+        is_default: Option<bool>,
+    ) -> Result<OfferLetterTemplate> {
+        let user_ctx = require_permission(ctx, "users.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let is_def = is_default.unwrap_or(false);
+
+        let template = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let t_id = tenant_id.clone();
+            let o_id = org_id.clone();
+            let n = name.clone();
+            let c = content.clone();
+            Box::pin(async move {
+                // If setting as default, unset any existing default first
+                if is_def {
+                    sqlx::query("UPDATE offer_letter_templates SET is_default = false WHERE organisation_id = $1::uuid AND is_default = true")
+                        .bind(&o_id)
+                        .execute(&mut *conn)
+                        .await?;
+                }
+                let row = sqlx::query_as::<_, OfferLetterTemplate>(
+                    "INSERT INTO offer_letter_templates (organisation_id, tenant_id, name, content, is_default)
+                     VALUES ($1::uuid, $2::uuid, $3, $4, $5)
+                     RETURNING id::text, organisation_id::text, name, content, is_default, created_at::text, updated_at::text",
+                )
+                .bind(&o_id)
+                .bind(&t_id)
+                .bind(&n)
+                .bind(&c)
+                .bind(is_def)
+                .fetch_one(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(template)
+    }
+
+    /// Update an existing offer letter template.
+    async fn update_offer_letter_template(
+        &self,
+        ctx: &Context<'_>,
+        id: String,
+        name: Option<String>,
+        content: Option<String>,
+        is_default: Option<bool>,
+    ) -> Result<OfferLetterTemplate> {
+        let user_ctx = require_permission(ctx, "users.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let template = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let template_id = id.clone();
+            let o_id = org_id.clone();
+            let n = name.clone();
+            let c = content.clone();
+            Box::pin(async move {
+                // If setting as default, unset any existing default first
+                if is_default == Some(true) {
+                    sqlx::query("UPDATE offer_letter_templates SET is_default = false WHERE organisation_id = $1::uuid AND is_default = true AND id != $2::uuid")
+                        .bind(&o_id)
+                        .bind(&template_id)
+                        .execute(&mut *conn)
+                        .await?;
+                }
+
+                let mut sets: Vec<String> = Vec::new();
+                let mut param_idx = 1u32; // $1 = template_id
+                if n.is_some() { param_idx += 1; sets.push(format!("name = ${param_idx}")); }
+                if c.is_some() { param_idx += 1; sets.push(format!("content = ${param_idx}")); }
+                if is_default.is_some() { param_idx += 1; sets.push(format!("is_default = ${param_idx}")); }
+                sets.push("updated_at = now()".to_string());
+
+                let sql = format!(
+                    "UPDATE offer_letter_templates SET {} WHERE id = $1::uuid
+                     RETURNING id::text, organisation_id::text, name, content, is_default, created_at::text, updated_at::text",
+                    sets.join(", ")
+                );
+
+                let mut query = sqlx::query_as::<_, OfferLetterTemplate>(&sql).bind(&template_id);
+                if let Some(ref n_val) = n { query = query.bind(n_val.as_str()); }
+                if let Some(ref c_val) = c { query = query.bind(c_val.as_str()); }
+                if let Some(is_def) = is_default { query = query.bind(is_def); }
+
+                let row = query.fetch_one(conn).await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(template)
+    }
+
+    /// Delete an offer letter template.
+    async fn delete_offer_letter_template(
+        &self,
+        ctx: &Context<'_>,
+        id: String,
+    ) -> Result<bool> {
+        let user_ctx = require_permission(ctx, "users.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let template_id = id.clone();
+            Box::pin(async move {
+                sqlx::query("DELETE FROM offer_letter_templates WHERE id = $1::uuid")
+                    .bind(&template_id)
+                    .execute(conn)
+                    .await?;
                 Ok(())
             })
         })

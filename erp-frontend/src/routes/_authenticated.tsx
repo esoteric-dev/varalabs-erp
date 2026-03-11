@@ -1,9 +1,12 @@
 import { createFileRoute, Outlet, Link, redirect } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { LogOut, Bell, Search, Settings, Plus, X, Trash2 } from 'lucide-react'
 import { fetchCurrentUser, fetchMyRoles, fetchMyPermissions } from '../lib/queries/user'
 import { fetchTodos, createTodo, updateTodo, deleteTodo } from '../lib/queries/dashboard'
+import { fetchMyClasses, fetchMyStudents } from '../lib/queries/teacher'
+import { fetchMyStudent } from '../lib/queries/students'
+import { fetchAttendanceRecords } from '../lib/queries/attendance'
 import type { OrgRole } from '../lib/queries/user'
 import type { AdminTodo } from '../lib/queries/dashboard'
 
@@ -63,7 +66,15 @@ const topNavItems = [
 ]
 
 function AuthenticatedLayout() {
-  const { orgSlug, currentUser, myRoles, myPermissions } = Route.useRouteContext()
+  const { orgSlug, currentUser: initialUser, myRoles, myPermissions } = Route.useRouteContext()
+
+  // Subscribe to currentUser query so the header re-renders when photo/profile updates
+  const { data: currentUser } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: fetchCurrentUser,
+    initialData: initialUser,
+    staleTime: 5 * 60_000,
+  })
 
   const perms = myPermissions as string[]
   const isSuperUser = currentUser.systemRole === 'superadmin' || currentUser.systemRole === 'tenant_admin'
@@ -93,6 +104,9 @@ function AuthenticatedLayout() {
     : topNavItems.filter(item =>
         item.permission === null || isSuperUser || perms.includes(item.permission)
       )
+
+  const isTeacher = roleSlugs.includes('teacher')
+  const isStudent = roleSlugs.includes('student')
 
   const displayRole = currentUser.systemRole !== 'user'
     ? currentUser.systemRole.replace('_', ' ')
@@ -154,12 +168,14 @@ function AuthenticatedLayout() {
               <Bell className="w-5 h-5" />
               <span className="absolute top-2 right-2 size-2 bg-rose-500 rounded-full border border-white" />
             </button>
-            <Link
-              to="/settings"
-              className="flex size-10 items-center justify-center rounded-full bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-600 transition-colors"
-            >
-              <Settings className="w-5 h-5" />
-            </Link>
+            {(isSuperUser || perms.includes('settings.update')) && (
+              <Link
+                to="/settings"
+                className="flex size-10 items-center justify-center rounded-full bg-slate-50 text-slate-600 hover:bg-teal-50 hover:text-teal-600 transition-colors"
+              >
+                <Settings className="w-5 h-5" />
+              </Link>
+            )}
           </div>
 
           {/* User profile */}
@@ -168,9 +184,13 @@ function AuthenticatedLayout() {
               <p className="text-sm font-bold text-slate-900 leading-none">{currentUser.name}</p>
               <p className="text-xs text-slate-500 leading-none mt-1 capitalize">{displayRole}</p>
             </div>
-            <div className="size-10 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm">
-              {currentUser.name.split(' ').map((n: string) => n[0]).join('')}
-            </div>
+            {currentUser.photoUrl ? (
+              <img src={currentUser.photoUrl} alt={currentUser.name} className="size-10 rounded-full object-cover border-2 border-white shadow-sm" />
+            ) : (
+              <div className="size-10 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm">
+                {currentUser.name.split(' ').map((n: string) => n[0]).join('')}
+              </div>
+            )}
           </Link>
         </div>
       </header>
@@ -179,6 +199,12 @@ function AuthenticatedLayout() {
       <div className="flex flex-1 w-full max-w-[1440px] mx-auto p-6 gap-6">
         {/* Sidebar */}
         <aside className="hidden lg:flex flex-col w-72 shrink-0 gap-6">
+          {/* Teacher Profile Card */}
+          {isTeacher && <TeacherProfileCard userName={currentUser.name} displayRole={displayRole} photoUrl={currentUser.photoUrl} />}
+
+          {/* Student Profile Card */}
+          {isStudent && <StudentProfileCard userName={currentUser.name} photoUrl={currentUser.photoUrl} />}
+
           {/* Navigation Card */}
           <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 flex flex-col gap-1">
             <div className="px-4 py-2 mb-2">
@@ -381,6 +407,125 @@ function SidebarTodos() {
           })
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Teacher Profile Card (sidebar) ───────────────────────────────────────────
+
+function TeacherProfileCard({ userName, displayRole, photoUrl }: { userName: string; displayRole: string; photoUrl?: string }) {
+  const { data: classes = [] } = useQuery({
+    queryKey: ['myClasses'],
+    queryFn: fetchMyClasses,
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: myStudents = [] } = useQuery({
+    queryKey: ['myStudents'],
+    queryFn: () => fetchMyStudents(),
+    staleTime: 5 * 60_000,
+  })
+
+  const totalStudents = useMemo(() => {
+    const unique = new Set(myStudents.map(s => s.id))
+    return unique.size
+  }, [myStudents])
+
+  const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase()
+
+  return (
+    <div className="flex flex-col items-center bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+      <div className="relative mb-4">
+        {photoUrl ? (
+          <img src={photoUrl} alt={userName} className="size-24 rounded-full object-cover border-4 border-teal-50" />
+        ) : (
+          <div className="size-24 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-white text-2xl font-bold border-4 border-teal-50">
+            {initials}
+          </div>
+        )}
+      </div>
+      <h1 className="text-slate-900 text-lg font-bold mb-1">{userName}</h1>
+      <p className="text-slate-500 text-sm font-medium mb-4 capitalize">{displayRole}</p>
+      <div className="flex justify-between w-full mb-6 px-2">
+        <div className="text-center flex-1">
+          <p className="text-slate-900 text-lg font-bold">{classes.length}</p>
+          <p className="text-slate-400 text-xs font-medium uppercase tracking-wider">Classes</p>
+        </div>
+        <div className="w-px bg-slate-100 mx-2" />
+        <div className="text-center flex-1">
+          <p className="text-slate-900 text-lg font-bold">{totalStudents}</p>
+          <p className="text-slate-400 text-xs font-medium uppercase tracking-wider">Students</p>
+        </div>
+        <div className="w-px bg-slate-100 mx-2" />
+        <div className="text-center flex-1">
+          <p className="text-slate-900 text-lg font-bold">{classes.filter(c => c.isClassTeacher).length}</p>
+          <p className="text-slate-400 text-xs font-medium uppercase tracking-wider">Class TR</p>
+        </div>
+      </div>
+      <Link
+        to="/profile"
+        className="w-full h-10 bg-teal-50 text-teal-600 rounded-lg text-sm font-bold hover:bg-teal-100 transition-colors flex items-center justify-center"
+      >
+        Edit Profile
+      </Link>
+    </div>
+  )
+}
+
+// ── Student Profile Card (sidebar) ───────────────────────────────────────────
+
+function StudentProfileCard({ userName, photoUrl }: { userName: string; photoUrl?: string }) {
+  const { data: student } = useQuery({
+    queryKey: ['myStudent'],
+    queryFn: fetchMyStudent,
+    staleTime: 5 * 60_000,
+  })
+
+  const studentId = student?.id
+
+  const { data: attendance = [] } = useQuery({
+    queryKey: ['attendanceRecords', 'student', studentId],
+    queryFn: () => fetchAttendanceRecords(undefined, studentId!),
+    enabled: !!studentId,
+    staleTime: 5 * 60_000,
+  })
+
+  const totalAttendance = attendance.length
+  const presentCount = attendance.filter(r => r.status === 'present').length
+  const attendanceRate = totalAttendance > 0 ? Math.round((presentCount / totalAttendance) * 100) : 0
+
+  const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase()
+
+  return (
+    <div className="flex flex-col items-center bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+      <div className="relative mb-4">
+        {(student?.photoUrl || photoUrl) ? (
+          <img src={student?.photoUrl || photoUrl} alt={userName} className="size-24 rounded-full object-cover border-4 border-blue-50" />
+        ) : (
+          <div className="size-24 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-2xl font-bold border-4 border-blue-50">
+            {initials}
+          </div>
+        )}
+      </div>
+      <h1 className="text-slate-900 text-lg font-bold mb-1">{userName}</h1>
+      <p className="text-slate-500 text-sm font-medium mb-4">{student?.className || 'Student'}</p>
+      <div className="flex justify-between w-full mb-6 px-2">
+        <div className="text-center flex-1">
+          <p className="text-slate-900 text-lg font-bold">{attendanceRate}%</p>
+          <p className="text-slate-400 text-xs font-medium uppercase tracking-wider">Attend</p>
+        </div>
+        <div className="w-px bg-slate-100 mx-2" />
+        <div className="text-center flex-1">
+          <p className="text-slate-900 text-lg font-bold">{student?.admissionNumber || '-'}</p>
+          <p className="text-slate-400 text-xs font-medium uppercase tracking-wider">Roll No</p>
+        </div>
+      </div>
+      <Link
+        to={studentId ? `/students/${studentId}` as any : '/profile'}
+        className="w-full h-10 bg-teal-50 text-teal-600 rounded-lg text-sm font-bold hover:bg-teal-100 transition-colors flex items-center justify-center"
+      >
+        View Full Profile
+      </Link>
     </div>
   )
 }

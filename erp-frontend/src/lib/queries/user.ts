@@ -10,6 +10,7 @@ export interface CurrentUser {
   email: string
   systemRole: UserRole
   phone?: string
+  photoUrl?: string
 }
 
 export interface OrgRole {
@@ -98,6 +99,7 @@ export const ME_QUERY = gql`
       email
       systemRole
       phone
+      photoUrl
     }
   }
 `
@@ -113,6 +115,7 @@ export const LOGIN_MUTATION = gql`
         email
         systemRole
         phone
+        photoUrl
       }
     }
   }
@@ -137,6 +140,7 @@ export const SIGNUP_MUTATION = gql`
         email
         systemRole
         phone
+        photoUrl
       }
       tenantId
     }
@@ -267,6 +271,7 @@ export const ORG_ADMIN_USER_QUERY = gql`
       email
       systemRole
       phone
+      photoUrl
     }
   }
 `
@@ -285,6 +290,19 @@ export const RESET_USER_PASSWORD_MUTATION = gql`
     resetUserPassword(userId: $userId, newPassword: $newPassword) {
       success
       generatedPassword
+    }
+  }
+`
+
+export const UPDATE_MY_PROFILE_MUTATION = gql`
+  mutation UpdateMyProfile($name: String, $phone: String) {
+    updateMyProfile(name: $name, phone: $phone) {
+      id
+      name
+      email
+      systemRole
+      phone
+      photoUrl
     }
   }
 `
@@ -441,4 +459,34 @@ export async function resetUserPassword(
     { userId, newPassword: newPassword ?? null },
   )
   return data.resetUserPassword
+}
+
+export async function updateMyProfile(
+  name?: string,
+  phone?: string,
+): Promise<CurrentUser> {
+  const data = await gqlClient.request<{ updateMyProfile: CurrentUser }>(
+    UPDATE_MY_PROFILE_MUTATION,
+    { name: name ?? null, phone: phone ?? null },
+  )
+  return data.updateMyProfile
+}
+
+export async function uploadMyPhoto(file: File): Promise<{ photoUrl: string; sizeBytes: number }> {
+  const token = localStorage.getItem('authToken')
+  const formData = new FormData()
+  formData.append('photo', file)
+
+  const res = await fetch('/api/me/photo', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: 'Upload failed' }))
+    throw new Error(body.error || 'Upload failed')
+  }
+
+  return res.json()
 }

@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Copy, Check, FileDown } from 'lucide-react'
-import { onboardStaff } from '../../lib/queries/org-users'
+import { onboardStaff, previewLoginEmail } from '../../lib/queries/org-users'
 import type { OnboardStaffInput, OnboardStaffResult } from '../../lib/queries/org-users'
 import { generateOfferLetterForUser } from '../../lib/offer-letter'
 
@@ -12,13 +12,14 @@ export const Route = createFileRoute('/_authenticated/add-staff')({
 
 function AddStaffPage() {
   const qc = useQueryClient()
+  const { orgSlug } = Route.useRouteContext()
   const [result, setResult] = useState<OnboardStaffResult | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [generatingPdf, setGeneratingPdf] = useState(false)
 
   const [form, setForm] = useState<OnboardStaffInput>({
     name: '',
-    email: '',
+    personalEmail: '',
     phone: '',
     password: '',
     designation: '',
@@ -45,6 +46,42 @@ function AddStaffPage() {
 
   const set = (field: keyof OnboardStaffInput, value: string) =>
     setForm(f => ({ ...f, [field]: value }))
+
+  const [loginEmailPreview, setLoginEmailPreview] = useState('')
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+
+    const name = form.name.trim()
+    if (!name) {
+      setLoginEmailPreview('')
+      return
+    }
+
+    // Show instant local preview while waiting for backend
+    if (orgSlug) {
+      const slug = name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '.')
+      setLoginEmailPreview(slug ? `${slug}@${orgSlug}.com` : '')
+    }
+
+    setLoadingPreview(true)
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const email = await previewLoginEmail(name)
+        setLoginEmailPreview(email)
+      } catch {
+        // Keep the local preview on error
+      } finally {
+        setLoadingPreview(false)
+      }
+    }, 400)
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [form.name, orgSlug])
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -111,7 +148,7 @@ function AddStaffPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3">
                 <div>
-                  <p className="text-xs text-gray-400">Email</p>
+                  <p className="text-xs text-gray-400">Email {result.generatedEmail ? '(auto-generated)' : ''}</p>
                   <p className="text-sm font-medium text-gray-800">{result.user.email}</p>
                 </div>
                 <button
@@ -196,14 +233,29 @@ function AddStaffPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Login Email</label>
+              <div className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-600 min-h-[38px] flex items-center gap-2">
+                {loginEmailPreview ? (
+                  <>
+                    <span>{loginEmailPreview}</span>
+                    {loadingPreview && <span className="text-gray-400 text-xs">(checking...)</span>}
+                  </>
+                ) : (
+                  <span className="text-gray-400 italic">Type a name to preview</span>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Auto-generated from name. Used for login.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Personal Email</label>
               <input
                 type="email"
-                value={form.email}
-                onChange={e => set('email', e.target.value)}
+                value={form.personalEmail}
+                onChange={e => set('personalEmail', e.target.value)}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                placeholder="email@example.com"
+                placeholder="personal@gmail.com"
               />
+              <p className="text-xs text-gray-400 mt-1">Optional. Staff member's personal contact email.</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
@@ -477,7 +529,7 @@ function AddStaffPage() {
           </Link>
           <button
             onClick={() => mutation.mutate()}
-            disabled={!form.name || !form.email || mutation.isPending}
+            disabled={!form.name || mutation.isPending}
             className="px-6 py-2.5 text-sm font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors"
           >
             {mutation.isPending ? 'Onboarding...' : 'Add Staff'}
