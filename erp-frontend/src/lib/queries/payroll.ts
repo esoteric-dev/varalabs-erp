@@ -85,6 +85,12 @@ const CREATE_PAYROLL_RUN_MUTATION = gql`
   }
 `
 
+const SET_STAFF_SALARY_MUTATION = gql`
+  mutation SetStaffSalary($userId: String!, $basicPay: Int!, $allowances: Int!, $deductions: Int!, $effectiveFrom: String) {
+    setStaffSalary(userId: $userId, basicPay: $basicPay, allowances: $allowances, deductions: $deductions, effectiveFrom: $effectiveFrom)
+  }
+`
+
 export async function fetchStaffSalaries(): Promise<StaffSalary[]> {
   const data = await gqlClient.request<{ staffSalaries: StaffSalary[] }>(STAFF_SALARIES_QUERY)
   return data.staffSalaries
@@ -108,4 +114,18 @@ export async function createPayrollRun(month: number, year: number): Promise<Pay
     { month, year },
   )
   return data.createPayrollRun
+}
+
+export async function setStaffSalary(
+  userId: string,
+  basicPay: number,
+  allowances: number,
+  deductions: number,
+  effectiveFrom?: string,
+): Promise<boolean> {
+  const data = await gqlClient.request<{ setStaffSalary: boolean }>(
+    SET_STAFF_SALARY_MUTATION,
+    { userId, basicPay, allowances, deductions, effectiveFrom },
+  )
+  return data.setStaffSalary
 }

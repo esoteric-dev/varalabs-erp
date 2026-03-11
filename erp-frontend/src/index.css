@@ -144,6 +144,13 @@
   background: rgba(15, 23, 42, 0.8);
 }
 
+/* Dark glass morphism for landing navbar */
+.glass-dark {
+  background: rgba(2, 6, 23, 0.7);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+}
+
 /* Mesh gradient background */
 .mesh-gradient {
   background:
@@ -157,6 +164,30 @@
     radial-gradient(ellipse at 20% 50%, rgba(20, 184, 166, 0.12) 0%, transparent 50%),
     radial-gradient(ellipse at 80% 20%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
     radial-gradient(ellipse at 40% 80%, rgba(167, 139, 250, 0.08) 0%, transparent 50%);
+}
+
+/* Infinite horizontal scroll for trusted-by logos */
+@keyframes scroll-x {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-scroll-x {
+  animation: scroll-x 30s linear infinite;
+}
+
+/* Shimmer border for CTA card */
+.shimmer-border {
+  background-size: 200% 200%;
+  animation: gradient-shift 4s ease infinite;
+}
+
+/* 3D perspective card for dashboard mockup */
+.perspective-card {
+  transition: transform 0.4s ease, box-shadow 0.4s ease;
+}
+.perspective-card:hover {
+  transform: perspective(1200px) rotateX(2deg) rotateY(-1deg) scale(1.01);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.5);
 }
 
 /* Subtle noise texture overlay */

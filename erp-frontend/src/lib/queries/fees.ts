@@ -72,6 +72,12 @@ const RECORD_FEE_PAYMENT_MUTATION = gql`
   }
 `
 
+const ASSIGN_FEE_TO_CLASS_MUTATION = gql`
+  mutation AssignFeeToClass($feeStructureId: String!, $className: String!, $dueDate: String) {
+    assignFeeToClass(feeStructureId: $feeStructureId, className: $className, dueDate: $dueDate)
+  }
+`
+
 export async function fetchFeeStructures(): Promise<FeeStructure[]> {
   const data = await gqlClient.request<{ feeStructures: FeeStructure[] }>(FEE_STRUCTURES_QUERY)
   return data.feeStructures
@@ -106,4 +112,16 @@ export async function recordFeePayment(
     { feeRecordId, amount, paymentMode },
   )
   return data.recordFeePayment
+}
+
+export async function assignFeeToClass(
+  feeStructureId: string,
+  className: string,
+  dueDate?: string,
+): Promise<number> {
+  const data = await gqlClient.request<{ assignFeeToClass: number }>(
+    ASSIGN_FEE_TO_CLASS_MUTATION,
+    { feeStructureId, className, dueDate },
+  )
+  return data.assignFeeToClass
 }

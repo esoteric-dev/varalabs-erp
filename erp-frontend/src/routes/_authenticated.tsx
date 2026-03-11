@@ -1,7 +1,11 @@
 import { createFileRoute, Outlet, Link, redirect } from '@tanstack/react-router'
-import { LogOut, Bell, Search, Settings } from 'lucide-react'
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { LogOut, Bell, Search, Settings, Plus, X, Trash2 } from 'lucide-react'
 import { fetchCurrentUser, fetchMyRoles, fetchMyPermissions } from '../lib/queries/user'
+import { fetchTodos, createTodo, updateTodo, deleteTodo } from '../lib/queries/dashboard'
 import type { OrgRole } from '../lib/queries/user'
+import type { AdminTodo } from '../lib/queries/dashboard'
 
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async ({ context }) => {
@@ -29,24 +33,24 @@ export const Route = createFileRoute('/_authenticated')({
 })
 
 const allNavItems = [
-  { to: '/' as const, label: 'Dashboard', icon: 'dashboard', permission: null },
-  { to: '/students' as const, label: 'Students', icon: 'school', permission: 'students.manage' },
-  { to: '/my-students' as const, label: 'My Students', icon: 'groups', permission: 'students.manage' },
-  { to: '/attendance' as const, label: 'Attendance', icon: 'calendar_month', permission: 'attendance.view' },
-  { to: '/assignments' as const, label: 'Assignments', icon: 'menu_book', permission: 'assignments.view' },
-  { to: '/fees' as const, label: 'Fees & Finance', icon: 'payments', permission: 'fees.view' },
-  { to: '/admissions' as const, label: 'Admissions', icon: 'person_add', permission: 'admissions.view' },
-  { to: '/notices' as const, label: 'Notices', icon: 'campaign', permission: 'notices.view' },
-  { to: '/leave' as const, label: 'Leave', icon: 'event_busy', permission: 'leave.view' },
-  { to: '/my-payslips' as const, label: 'My Payslips', icon: 'receipt_long', permission: 'payroll.view' },
-  { to: '/payroll' as const, label: 'Payroll', icon: 'account_balance_wallet', permission: 'payroll.view' },
-  { to: '/reports' as const, label: 'Reports', icon: 'bar_chart', permission: 'reports.view' },
-  { to: '/roles' as const, label: 'Roles', icon: 'shield', permission: 'roles.view' },
-  { to: '/users' as const, label: 'Users', icon: 'manage_accounts', permission: 'users.view' },
+  { to: '/' as const, label: 'Dashboard', icon: 'dashboard', permission: null, requiresRole: null },
+  { to: '/students' as const, label: 'Students', icon: 'school', permission: 'students.manage', requiresRole: null },
+  { to: '/my-students' as const, label: 'My Students', icon: 'groups', permission: 'students.manage', requiresRole: 'teacher' as string | null },
+  { to: '/attendance' as const, label: 'Attendance', icon: 'calendar_month', permission: 'attendance.view', requiresRole: 'teacher' as string | null },
+  { to: '/assignments' as const, label: 'Assignments', icon: 'menu_book', permission: 'assignments.view', requiresRole: 'teacher' as string | null },
+  { to: '/fees' as const, label: 'Fees & Finance', icon: 'payments', permission: 'fees.view', requiresRole: null },
+  { to: '/admissions' as const, label: 'Admissions', icon: 'person_add', permission: 'admissions.view', requiresRole: null },
+  { to: '/notices' as const, label: 'Notices', icon: 'campaign', permission: 'notices.view', requiresRole: null },
+  { to: '/leave' as const, label: 'Leave', icon: 'event_busy', permission: 'leave.view', requiresRole: null },
+  { to: '/my-payslips' as const, label: 'My Payslips', icon: 'receipt_long', permission: 'payroll.view', requiresRole: null },
+  { to: '/payroll' as const, label: 'Payroll', icon: 'account_balance_wallet', permission: 'payroll.view', requiresRole: null },
+  { to: '/reports' as const, label: 'Reports', icon: 'bar_chart', permission: 'reports.view', requiresRole: null },
+  { to: '/roles' as const, label: 'Roles', icon: 'shield', permission: 'roles.view', requiresRole: null },
+  { to: '/users' as const, label: 'Users', icon: 'manage_accounts', permission: 'users.view', requiresRole: null },
 ]
 
 const systemNavItems = [
-  { to: '/settings' as const, label: 'Configuration', icon: 'settings_suggest', permission: null },
+  { to: '/settings' as const, label: 'Configuration', icon: 'settings_suggest', permission: 'settings.update' },
   { to: '/roles' as const, label: 'Access Control', icon: 'security', permission: 'roles.view' },
 ]
 
@@ -63,15 +67,20 @@ function AuthenticatedLayout() {
 
   const perms = myPermissions as string[]
   const isSuperUser = currentUser.systemRole === 'superadmin' || currentUser.systemRole === 'tenant_admin'
+  const roleSlugs = (myRoles as OrgRole[]).map(r => r.slug)
 
   // Tenant admin on root domain: minimal sidebar (Dashboard only)
   const isTenantAdminRoot = !orgSlug && currentUser.systemRole === 'tenant_admin'
 
   const navItems = isTenantAdminRoot
-    ? [{ to: '/' as const, label: 'Dashboard', icon: 'dashboard', permission: null }]
-    : allNavItems.filter(item =>
-        item.permission === null || isSuperUser || perms.includes(item.permission)
-      )
+    ? [{ to: '/' as const, label: 'Dashboard', icon: 'dashboard', permission: null, requiresRole: null }]
+    : allNavItems.filter(item => {
+        // Permission check
+        if (item.permission !== null && !isSuperUser && !perms.includes(item.permission)) return false
+        // Role requirement: if set, user must have that org role (superUser doesn't override)
+        if (item.requiresRole && !roleSlugs.includes(item.requiresRole)) return false
+        return true
+      })
 
   const filteredSystemItems = isTenantAdminRoot
     ? []
@@ -217,54 +226,160 @@ function AuthenticatedLayout() {
             </button>
           </div>
 
-          {/* Management Tasks Card */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-slate-900 text-sm font-bold flex items-center gap-2">
-                <span className="material-symbols-outlined text-teal-500 text-lg">check_circle</span>
-                Management Tasks
-              </h3>
-              <span className="text-xs bg-rose-100 text-rose-600 px-2 py-0.5 rounded-sm font-bold">3 Pending</span>
-            </div>
-            <div className="space-y-3">
-              <div className="flex gap-3 items-start p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <div className="mt-0.5">
-                  <span className="material-symbols-outlined text-amber-500 text-base">pending_actions</span>
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-800">Approve Leave Requests</h4>
-                  <p className="text-[10px] text-slate-500 mt-1">5 staff members waiting</p>
-                </div>
-              </div>
-              <div className="flex gap-3 items-start p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <div className="mt-0.5">
-                  <span className="material-symbols-outlined text-rose-500 text-base">warning</span>
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-800">Resolve Fee Disputes</h4>
-                  <p className="text-[10px] text-slate-500 mt-1">2 urgent cases</p>
-                </div>
-              </div>
-              <div className="flex gap-3 items-start p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <div className="mt-0.5">
-                  <span className="material-symbols-outlined text-blue-500 text-base">edit_document</span>
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-800">Review Term Report</h4>
-                  <p className="text-[10px] text-slate-500 mt-1">Draft saved yesterday</p>
-                </div>
-              </div>
-            </div>
-            <button className="w-full py-2 text-xs text-teal-600 font-bold hover:bg-teal-50 rounded-lg transition-colors border border-transparent hover:border-teal-100">
-              View All Tasks
-            </button>
-          </div>
+          {/* My Tasks */}
+          {!isTenantAdminRoot && <SidebarTodos />}
         </aside>
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col gap-6 min-w-0">
           <Outlet />
         </main>
+      </div>
+    </div>
+  )
+}
+
+// ── Sidebar Todo List ────────────────────────────────────────────────────────
+
+const priorityOrder: Record<string, number> = { pending: 0, in_progress: 1, done: 2 }
+
+function SidebarTodos() {
+  const queryClient = useQueryClient()
+  const [showInput, setShowInput] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+
+  const { data: todos = [] } = useQuery<AdminTodo[]>({
+    queryKey: ['adminTodos'],
+    queryFn: fetchTodos,
+    staleTime: 60_000,
+  })
+
+  // Sort: pending first, then in_progress, then done
+  const sorted = [...todos].sort(
+    (a, b) => (priorityOrder[a.status] ?? 9) - (priorityOrder[b.status] ?? 9),
+  )
+
+  const pendingCount = todos.filter((t) => t.status !== 'done').length
+
+  const addMutation = useMutation({
+    mutationFn: (title: string) => createTodo(title),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['adminTodos'] })
+      setNewTitle('')
+      setShowInput(false)
+    },
+  })
+
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      updateTodo(id, status === 'done' ? 'pending' : 'done'),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminTodos'] }),
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => deleteTodo(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminTodos'] }),
+  })
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-slate-900 text-sm font-bold flex items-center gap-2">
+          <span className="material-symbols-outlined text-teal-500 text-lg">checklist</span>
+          My Tasks
+        </h3>
+        <div className="flex items-center gap-2">
+          {pendingCount > 0 && (
+            <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">
+              {pendingCount}
+            </span>
+          )}
+          <button
+            onClick={() => setShowInput(!showInput)}
+            className="text-slate-400 hover:text-teal-600 transition-colors"
+            title="Add task"
+          >
+            {showInput ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Add task input */}
+      {showInput && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (newTitle.trim()) addMutation.mutate(newTitle.trim())
+          }}
+          className="flex gap-1.5"
+        >
+          <input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="New task..."
+            autoFocus
+            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent placeholder:text-slate-400"
+          />
+          <button
+            type="submit"
+            disabled={!newTitle.trim() || addMutation.isPending}
+            className="px-2.5 py-1.5 text-xs font-medium bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 transition-colors shrink-0"
+          >
+            Add
+          </button>
+        </form>
+      )}
+
+      {/* Task list */}
+      <div className="space-y-1 max-h-64 overflow-y-auto">
+        {sorted.length === 0 ? (
+          <div className="text-center py-4">
+            <span className="material-symbols-outlined text-2xl text-slate-200 block mb-1">task_alt</span>
+            <p className="text-[11px] text-slate-400">No tasks yet</p>
+          </div>
+        ) : (
+          sorted.map((todo) => {
+            const isDone = todo.status === 'done'
+            return (
+              <div
+                key={todo.id}
+                className={`flex items-start gap-2 p-2 rounded-lg group transition-colors ${
+                  isDone ? 'opacity-50' : 'hover:bg-slate-50'
+                }`}
+              >
+                <button
+                  onClick={() => toggleMutation.mutate({ id: todo.id, status: todo.status })}
+                  className={`mt-0.5 shrink-0 size-4 rounded border-2 flex items-center justify-center transition-colors ${
+                    isDone
+                      ? 'bg-teal-500 border-teal-500 text-white'
+                      : 'border-slate-300 hover:border-teal-400'
+                  }`}
+                >
+                  {isDone && (
+                    <span className="material-symbols-outlined text-xs">check</span>
+                  )}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs leading-snug ${isDone ? 'line-through text-slate-400' : 'text-slate-700 font-medium'}`}>
+                    {todo.title}
+                  </p>
+                  {todo.dueTime && (
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {todo.dueTime}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => removeMutation.mutate(todo.id)}
+                  className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-all shrink-0 mt-0.5"
+                  title="Delete task"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            )
+          })
+        )}
       </div>
     </div>
   )

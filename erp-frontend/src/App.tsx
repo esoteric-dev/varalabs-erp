@@ -1,9 +1,6 @@
-import Landing from "./components/landing/home";
-
 function App() {
   return (
     <div className="App">
-      <Landing />
     </div>
   )
 }

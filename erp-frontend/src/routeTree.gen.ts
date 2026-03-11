@@ -28,6 +28,7 @@ import { Route as AuthenticatedFeesRouteImport } from './routes/_authenticated/f
 import { Route as AuthenticatedAttendanceRouteImport } from './routes/_authenticated/attendance'
 import { Route as AuthenticatedAssignmentsRouteImport } from './routes/_authenticated/assignments'
 import { Route as AuthenticatedAdmissionsRouteImport } from './routes/_authenticated/admissions'
+import { Route as AuthenticatedAddStaffRouteImport } from './routes/_authenticated/add-staff'
 import { Route as AuthenticatedStudentsIndexRouteImport } from './routes/_authenticated/students/index'
 import { Route as AuthenticatedStudentsAddStudentRouteImport } from './routes/_authenticated/students/add-student'
 import { Route as AuthenticatedStudentsStudentIdRouteImport } from './routes/_authenticated/students/$studentId'
@@ -127,6 +128,11 @@ const AuthenticatedAdmissionsRoute = AuthenticatedAdmissionsRouteImport.update({
   path: '/admissions',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAddStaffRoute = AuthenticatedAddStaffRouteImport.update({
+  id: '/add-staff',
+  path: '/add-staff',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedStudentsIndexRoute =
   AuthenticatedStudentsIndexRouteImport.update({
     id: '/students/',
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
   '/welcome': typeof WelcomeRoute
+  '/add-staff': typeof AuthenticatedAddStaffRoute
   '/admissions': typeof AuthenticatedAdmissionsRoute
   '/assignments': typeof AuthenticatedAssignmentsRoute
   '/attendance': typeof AuthenticatedAttendanceRoute
@@ -173,6 +180,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
   '/welcome': typeof WelcomeRoute
+  '/add-staff': typeof AuthenticatedAddStaffRoute
   '/admissions': typeof AuthenticatedAdmissionsRoute
   '/assignments': typeof AuthenticatedAssignmentsRoute
   '/attendance': typeof AuthenticatedAttendanceRoute
@@ -198,6 +206,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
   '/welcome': typeof WelcomeRoute
+  '/_authenticated/add-staff': typeof AuthenticatedAddStaffRoute
   '/_authenticated/admissions': typeof AuthenticatedAdmissionsRoute
   '/_authenticated/assignments': typeof AuthenticatedAssignmentsRoute
   '/_authenticated/attendance': typeof AuthenticatedAttendanceRoute
@@ -224,6 +233,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/welcome'
+    | '/add-staff'
     | '/admissions'
     | '/assignments'
     | '/attendance'
@@ -246,6 +256,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/welcome'
+    | '/add-staff'
     | '/admissions'
     | '/assignments'
     | '/attendance'
@@ -270,6 +281,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/welcome'
+    | '/_authenticated/add-staff'
     | '/_authenticated/admissions'
     | '/_authenticated/assignments'
     | '/_authenticated/attendance'
@@ -432,6 +444,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdmissionsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/add-staff': {
+      id: '/_authenticated/add-staff'
+      path: '/add-staff'
+      fullPath: '/add-staff'
+      preLoaderRoute: typeof AuthenticatedAddStaffRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/students/': {
       id: '/_authenticated/students/'
       path: '/students'
@@ -457,6 +476,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedAddStaffRoute: typeof AuthenticatedAddStaffRoute
   AuthenticatedAdmissionsRoute: typeof AuthenticatedAdmissionsRoute
   AuthenticatedAssignmentsRoute: typeof AuthenticatedAssignmentsRoute
   AuthenticatedAttendanceRoute: typeof AuthenticatedAttendanceRoute
@@ -478,6 +498,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAddStaffRoute: AuthenticatedAddStaffRoute,
   AuthenticatedAdmissionsRoute: AuthenticatedAdmissionsRoute,
   AuthenticatedAssignmentsRoute: AuthenticatedAssignmentsRoute,
   AuthenticatedAttendanceRoute: AuthenticatedAttendanceRoute,

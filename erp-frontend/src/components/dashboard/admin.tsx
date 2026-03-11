@@ -4,6 +4,7 @@ import { fetchReportSummary } from '../../lib/queries/reports'
 
 // Widget components
 import { StatCards } from './admin/StatCards'
+import { TodayOverview } from './admin/TodayOverview'
 import { AttendanceChart } from './admin/AttendanceChart'
 import { RecentActivity } from './admin/RecentActivity'
 import { SystemStatus } from './admin/SystemStatus'
@@ -30,6 +31,9 @@ export function AdminDashboard({ tenantId: _tenantId }: AdminDashboardProps) {
       ) : (
         <StatCards summary={summary} />
       )}
+
+      {/* ── Today's Attendance Overview ──────────────────────────────────── */}
+      <TodayOverview />
 
       {/* ── Main Content Grid ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">

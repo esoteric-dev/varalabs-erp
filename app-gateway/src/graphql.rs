@@ -324,6 +324,36 @@ pub struct PayrollEntry {
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct StaffDetail {
+    pub user_id: String,
+    pub designation: Option<String>,
+    pub department: Option<String>,
+    pub qualification: Option<String>,
+    pub date_of_birth: Option<String>,
+    pub gender: Option<String>,
+    pub blood_group: Option<String>,
+    pub marital_status: Option<String>,
+    pub address: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub zip_code: Option<String>,
+    pub country: Option<String>,
+    pub bank_account_name: Option<String>,
+    pub bank_account_number: Option<String>,
+    pub bank_name: Option<String>,
+    pub bank_ifsc: Option<String>,
+    pub bank_branch: Option<String>,
+    pub date_of_joining: Option<String>,
+}
+
+#[derive(Debug, SimpleObject)]
+pub struct OnboardStaffResponse {
+    pub user: User,
+    pub employee_id: String,
+    pub generated_password: Option<String>,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
 pub struct OrgUser {
     pub id: String,
     pub name: String,
@@ -1386,6 +1416,36 @@ impl QueryRoot {
         Ok(rows)
     }
 
+    /// Get staff details for a specific user.
+    async fn staff_detail(&self, ctx: &Context<'_>, user_id: String) -> Result<Option<StaffDetail>> {
+        let user_ctx = require_permission(ctx, "users.view")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let detail = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let uid = user_id.clone();
+            Box::pin(async move {
+                let row = sqlx::query_as::<_, StaffDetail>(
+                    "SELECT user_id::text, designation, department, qualification,
+                            date_of_birth::text, gender, blood_group, marital_status,
+                            address, city, state, zip_code, country,
+                            bank_account_name, bank_account_number, bank_name, bank_ifsc, bank_branch,
+                            date_of_joining::text
+                     FROM staff_details WHERE user_id = $1::uuid",
+                )
+                .bind(&uid)
+                .fetch_optional(conn)
+                .await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(detail)
+    }
+
     async fn payroll_runs(&self, ctx: &Context<'_>) -> Result<Vec<PayrollRun>> {
         let user_ctx = require_permission(ctx, "payroll.view")?;
         let pool = ctx.data::<PgPool>()?;
@@ -2178,7 +2238,7 @@ impl QueryRoot {
                         (SELECT COUNT(*) FROM attendance_records WHERE {df} AND status = 'present')::bigint AS student_present,
                         (SELECT COUNT(*) FROM attendance_records WHERE {df} AND status = 'absent')::bigint AS student_absent,
                         (SELECT COUNT(*) FROM attendance_records WHERE {df} AND status = 'late')::bigint AS student_late,
-                        (SELECT COUNT(*) FROM attendance_records WHERE {df})::bigint AS student_total,
+                        (SELECT COUNT(*) FROM students)::bigint AS student_total,
                         COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND sa.status = 'present' AND u.system_role = 'teacher'), 0)::bigint AS teacher_present,
                         COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND sa.status = 'absent' AND u.system_role = 'teacher'), 0)::bigint AS teacher_absent,
                         COALESCE((SELECT COUNT(*) FROM staff_attendance sa JOIN users u ON u.id = sa.user_id WHERE sa.{df} AND sa.status = 'late' AND u.system_role = 'teacher'), 0)::bigint AS teacher_late,
@@ -3379,6 +3439,196 @@ impl MutationRoot {
         })
     }
 
+    /// Onboard a new staff member with extended details, optional salary, and employee ID.
+    async fn onboard_staff(
+        &self,
+        ctx: &Context<'_>,
+        name: String,
+        email: String,
+        phone: Option<String>,
+        password: Option<String>,
+        designation: Option<String>,
+        department: Option<String>,
+        qualification: Option<String>,
+        date_of_birth: Option<String>,
+        gender: Option<String>,
+        blood_group: Option<String>,
+        marital_status: Option<String>,
+        address: Option<String>,
+        city: Option<String>,
+        state: Option<String>,
+        zip_code: Option<String>,
+        country: Option<String>,
+        bank_account_name: Option<String>,
+        bank_account_number: Option<String>,
+        bank_name: Option<String>,
+        bank_ifsc: Option<String>,
+        bank_branch: Option<String>,
+        date_of_joining: Option<String>,
+        basic_pay: Option<i64>,
+        allowances: Option<i64>,
+        deductions: Option<i64>,
+    ) -> Result<OnboardStaffResponse> {
+        let user_ctx = require_permission(ctx, "users.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let (hashed, generated_pw) = match password {
+            Some(ref p) if !p.is_empty() => {
+                let h = bcrypt::hash(p, 12).map_err(|e| {
+                    async_graphql::Error::new(format!("Failed to hash password: {e}"))
+                })?;
+                (h, None)
+            }
+            _ => {
+                let pw = generate_random_password();
+                let h = bcrypt::hash(&pw, 12).map_err(|e| {
+                    async_graphql::Error::new(format!("Failed to hash password: {e}"))
+                })?;
+                (h, Some(pw))
+            }
+        };
+
+        let org_uuid = uuid::Uuid::parse_str(&user_ctx.org_id)
+            .map_err(|_| async_graphql::Error::new("Invalid org id"))?;
+        let tenant_uuid = uuid::Uuid::parse_str(&user_ctx.tenant_id)
+            .map_err(|_| async_graphql::Error::new("Invalid tenant id"))?;
+
+        let mut tx = pool.begin().await.map_err(|e| {
+            async_graphql::Error::new(format!("DB error: {e}"))
+        })?;
+
+        // 1. Create user
+        let user = sqlx::query_as::<_, User>(
+            "INSERT INTO users (name, email, password_hash, system_role, phone, tenant_id)
+             VALUES ($1, $2, $3, 'user', $4, $5)
+             RETURNING id::text, name, email, system_role, phone",
+        )
+        .bind(&name)
+        .bind(&email)
+        .bind(&hashed)
+        .bind(phone.as_deref())
+        .bind(tenant_uuid)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| match &e {
+            sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
+                async_graphql::Error::new(format!("A user with email '{}' already exists", email))
+            }
+            _ => {
+                tracing::error!("DB error creating user: {e}");
+                async_graphql::Error::new("Internal server error")
+            }
+        })?;
+
+        let user_uuid = uuid::Uuid::parse_str(&user.id)
+            .map_err(|_| async_graphql::Error::new("Invalid user id"))?;
+
+        // 2. Generate employee ID
+        let year = chrono::Utc::now().format("%Y").to_string();
+        let next_seq: i32 = sqlx::query_scalar(
+            "INSERT INTO organisation_settings (organisation_id, tenant_id, employee_seq)
+             VALUES ($1, $2, 1)
+             ON CONFLICT (organisation_id)
+             DO UPDATE SET employee_seq = organisation_settings.employee_seq + 1
+             RETURNING employee_seq",
+        )
+        .bind(org_uuid)
+        .bind(tenant_uuid)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error getting employee seq: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+        let employee_id = format!("EMP-{}-{:04}", year, next_seq);
+
+        // 3. Link user to org
+        sqlx::query(
+            "INSERT INTO user_organisations (user_id, organisation_id, employee_id)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(user_uuid)
+        .bind(org_uuid)
+        .bind(&employee_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error linking user to org: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // 4. Create staff details
+        sqlx::query(
+            "INSERT INTO staff_details (user_id, tenant_id, organisation_id,
+                designation, department, qualification, date_of_birth, gender, blood_group,
+                marital_status, address, city, state, zip_code, country,
+                bank_account_name, bank_account_number, bank_name, bank_ifsc, bank_branch,
+                date_of_joining)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10,
+                     $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21::date)",
+        )
+        .bind(user_uuid)
+        .bind(tenant_uuid)
+        .bind(org_uuid)
+        .bind(designation.as_deref())
+        .bind(department.as_deref())
+        .bind(qualification.as_deref())
+        .bind(date_of_birth.as_deref())
+        .bind(gender.as_deref())
+        .bind(blood_group.as_deref())
+        .bind(marital_status.as_deref())
+        .bind(address.as_deref())
+        .bind(city.as_deref())
+        .bind(state.as_deref())
+        .bind(zip_code.as_deref())
+        .bind(country.as_deref().unwrap_or("India"))
+        .bind(bank_account_name.as_deref())
+        .bind(bank_account_number.as_deref())
+        .bind(bank_name.as_deref())
+        .bind(bank_ifsc.as_deref())
+        .bind(bank_branch.as_deref())
+        .bind(date_of_joining.as_deref())
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error creating staff details: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // 5. Optionally set salary
+        if let Some(bp) = basic_pay {
+            let eff = date_of_joining.as_deref().unwrap_or(&chrono::Utc::now().format("%Y-%m-%d").to_string()).to_string();
+            sqlx::query(
+                "INSERT INTO staff_salaries (organisation_id, tenant_id, user_id, basic_pay, allowances, deductions, effective_from)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7::date)",
+            )
+            .bind(org_uuid)
+            .bind(tenant_uuid)
+            .bind(user_uuid)
+            .bind(bp)
+            .bind(allowances.unwrap_or(0))
+            .bind(deductions.unwrap_or(0))
+            .bind(&eff)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error creating staff salary: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+        }
+
+        tx.commit().await.map_err(|e| {
+            async_graphql::Error::new(format!("DB error: {e}"))
+        })?;
+
+        tracing::info!(user_id = %user.id, email = %email, employee_id = %employee_id, "Onboarded staff");
+        Ok(OnboardStaffResponse {
+            user,
+            employee_id,
+            generated_password: generated_pw,
+        })
+    }
+
     /// Create a new role in an organisation. Requires `roles.manage`.
     async fn create_role(
         &self,
@@ -3879,6 +4129,61 @@ impl MutationRoot {
 
     // ── Admission mutations ─────────────────────────────────────────────────
 
+    /// Assign a fee structure to all students in a class, creating fee_records for each.
+    async fn assign_fee_to_class(
+        &self,
+        ctx: &Context<'_>,
+        fee_structure_id: String,
+        class_name: String,
+        due_date: Option<String>,
+    ) -> Result<i32> {
+        let user_ctx = require_permission(ctx, "fees.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let count = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let fs_id = fee_structure_id.clone();
+            let cn = class_name.clone();
+            let dd = due_date.clone();
+            Box::pin(async move {
+                let result = sqlx::query_scalar::<_, i64>(
+                    "WITH inserted AS (
+                        INSERT INTO fee_records (organisation_id, tenant_id, student_id, fee_structure_id, amount_due, status, due_date)
+                        SELECT
+                            current_setting('app.current_org', true)::uuid,
+                            current_setting('app.current_tenant', true)::uuid,
+                            s.id,
+                            $1::uuid,
+                            fs.amount,
+                            'pending',
+                            COALESCE($3::date, (CURRENT_DATE + interval '30 days')::date)
+                        FROM students s
+                        CROSS JOIN fee_structures fs
+                        WHERE s.class_name = $2
+                          AND fs.id = $1::uuid
+                          AND NOT EXISTS (
+                              SELECT 1 FROM fee_records fr
+                              WHERE fr.student_id = s.id AND fr.fee_structure_id = $1::uuid
+                          )
+                        RETURNING 1
+                    )
+                    SELECT COUNT(*)::bigint FROM inserted",
+                )
+                .bind(&fs_id)
+                .bind(&cn)
+                .bind(dd.as_deref())
+                .fetch_one(conn)
+                .await?;
+                Ok(result as i32)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(count)
+    }
+
     async fn create_admission(
         &self,
         ctx: &Context<'_>,
@@ -4085,6 +4390,48 @@ impl MutationRoot {
     }
 
     // ── Payroll mutations ───────────────────────────────────────────────────
+
+    /// Set or update a staff member's salary record.
+    async fn set_staff_salary(
+        &self,
+        ctx: &Context<'_>,
+        user_id: String,
+        basic_pay: i64,
+        allowances: i64,
+        deductions: i64,
+        effective_from: Option<String>,
+    ) -> Result<bool> {
+        let user_ctx = require_permission(ctx, "payroll.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+
+        let eff = effective_from.unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
+
+        execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let uid = user_id.clone();
+            let eff_date = eff.clone();
+            Box::pin(async move {
+                sqlx::query(
+                    "INSERT INTO staff_salaries (organisation_id, tenant_id, user_id, basic_pay, allowances, deductions, effective_from)
+                     VALUES (current_setting('app.current_org', true)::uuid, current_setting('app.current_tenant', true)::uuid,
+                             $1::uuid, $2, $3, $4, $5::date)
+                     ON CONFLICT (user_id, effective_from)
+                     DO UPDATE SET basic_pay = $2, allowances = $3, deductions = $4",
+                )
+                .bind(&uid)
+                .bind(basic_pay)
+                .bind(allowances)
+                .bind(deductions)
+                .bind(&eff_date)
+                .execute(conn)
+                .await?;
+                Ok(true)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())
+    }
 
     async fn create_payroll_run(
         &self,

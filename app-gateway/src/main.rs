@@ -2,8 +2,9 @@ mod auth;
 mod db;
 mod errors;
 mod graphql;
+mod offer_letter;
 
-use axum::{extract::Extension, middleware, routing::post, Router};
+use axum::{extract::Extension, middleware, routing::{get, post}, Router};
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use tower_http::cors::{Any, CorsLayer};
@@ -63,6 +64,7 @@ async fn main() {
 
     // Build the async-graphql schema.
     let pool_for_middleware = pool.clone();
+    let pool_for_ext = pool.clone();
     let schema = build_schema(pool);
 
     // CORS — allow the frontend origin during development.
@@ -74,11 +76,13 @@ async fn main() {
     // Assemble the Axum router.
     let app = Router::new()
         .route("/graphql", post(graphql_handler))
+        .route("/api/offer-letter/{user_id}", get(offer_letter::offer_letter_handler))
         .layer(middleware::from_fn_with_state(
             pool_for_middleware,
             auth_middleware,
         ))
         .layer(Extension(schema))
+        .layer(Extension(pool_for_ext))
         .layer(cors);
 
     let bind_addr = env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());
