@@ -6612,7 +6612,7 @@ impl MutationRoot {
     }
 
     async fn add_class(&self, ctx: &Context<'_>, class_name: String) -> Result<bool> {
-        let user_ctx = require_permission(ctx, "settings.update").map_err(|e| {
+        let user_ctx = require_permission(ctx, "students.create").map_err(|e| {
             tracing::error!("add_class permission error for user {}: {}", ctx.data_opt::<UserContext>().map(|u| u.user_id.as_str()).unwrap_or("unknown"), e.message);
             e
         })?;

@@ -16,6 +16,7 @@ export default function PersonalInfo({ data, updateData, config }: Props) {
   const qc = useQueryClient()
   const [showAddClass, setShowAddClass] = useState(false)
   const [newClassName, setNewClassName] = useState('')
+  const [addClassError, setAddClassError] = useState<string | null>(null)
 
   const { data: classes = [] } = useQuery({
     queryKey: ['classes'],
@@ -33,6 +34,10 @@ export default function PersonalInfo({ data, updateData, config }: Props) {
       qc.invalidateQueries({ queryKey: ['classes'] })
       setNewClassName('')
       setShowAddClass(false)
+      setAddClassError(null)
+    },
+    onError: (err: any) => {
+      setAddClassError(err.response?.errors?.[0]?.message || err.message || 'Failed to add class')
     },
   })
 
@@ -83,23 +88,28 @@ export default function PersonalInfo({ data, updateData, config }: Props) {
             </button>
           </div>
           {showAddClass && (
-            <div className="mt-2 flex gap-2">
-              <input
-                type="text"
-                value={newClassName}
-                onChange={(e) => setNewClassName(e.target.value)}
-                placeholder="e.g. Grade 10-A"
-                className={`flex-1 ${inputCls}`}
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => newClassName.trim() && addClassMut.mutate(newClassName.trim())}
-                disabled={!newClassName.trim() || addClassMut.isPending}
-                className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
-              >
-                {addClassMut.isPending ? '...' : 'Add'}
-              </button>
+            <div className="mt-2 flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newClassName}
+                  onChange={(e) => { setNewClassName(e.target.value); setAddClassError(null) }}
+                  placeholder="e.g. Grade 10-A"
+                  className={`flex-1 ${inputCls}`}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => newClassName.trim() && addClassMut.mutate(newClassName.trim())}
+                  disabled={!newClassName.trim() || addClassMut.isPending}
+                  className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                >
+                  {addClassMut.isPending ? '...' : 'Add'}
+                </button>
+              </div>
+              {addClassError && (
+                <p className="text-sm text-red-600">{addClassError}</p>
+              )}
             </div>
           )}
         </div>
