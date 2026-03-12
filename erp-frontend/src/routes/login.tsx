@@ -3,7 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   Hexagon, Mail, Lock, ArrowRight, Eye, EyeOff,
-  GraduationCap, BarChart3, Shield, Sparkles,
+  GraduationCap, BarChart3, Shield,
 } from 'lucide-react'
 import { loginUser, resolveOrg } from '../lib/queries/user'
 
