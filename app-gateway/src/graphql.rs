@@ -3867,29 +3867,55 @@ impl MutationRoot {
         })?;
 
         // Create default roles for the new org
-        let default_roles = [
-            ("Admin", "admin", vec![
-                "students.view", "students.manage", "attendance.view", "attendance.manage",
-                "fees.view", "fees.manage", "admissions.view", "admissions.manage",
-                "notices.view", "notices.manage", "payroll.view", "payroll.manage",
-                "reports.view", "users.view", "users.manage", "roles.view", "roles.manage",
-                "assignments.view", "assignments.manage", "leave.view", "leave.manage",
-            ]),
+        // Admin gets ALL permissions; other roles get specific subsets
+        let non_admin_roles: Vec<(&str, &str, Vec<&str>)> = vec![
             ("Teacher", "teacher", vec![
                 "students.view", "attendance.view", "attendance.manage",
                 "assignments.view", "assignments.manage", "notices.view", "leave.view",
+                "dashboard.view",
             ]),
             ("Student", "student", vec![
                 "attendance.view", "assignments.view", "notices.view", "fees.view", "leave.view",
+                "dashboard.view",
             ]),
             ("Parent", "parent", vec![
-                "attendance.view", "fees.view", "notices.view",
+                "attendance.view", "fees.view", "notices.view", "dashboard.view",
             ]),
         ];
 
-        let mut admin_role_id: Option<uuid::Uuid> = None;
+        // Create Admin role with ALL permissions
+        let admin_role_row: (String,) = sqlx::query_as(
+            "INSERT INTO roles (organisation_id, name, slug, description, is_system)
+             VALUES ($1, 'Admin', 'admin', 'Default Admin role', true)
+             RETURNING id::text",
+        )
+        .bind(org_uuid)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error creating admin role: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
 
-        for (role_name, role_slug, perms) in &default_roles {
+        let admin_role_uuid = uuid::Uuid::parse_str(&admin_role_row.0)
+            .map_err(|_| async_graphql::Error::new("Invalid role id"))?;
+        let admin_role_id = Some(admin_role_uuid);
+
+        // Grant ALL permissions to Admin
+        sqlx::query(
+            "INSERT INTO role_permissions (role_id, permission_id)
+             SELECT $1, id FROM permissions",
+        )
+        .bind(admin_role_uuid)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error attaching all permissions to admin: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        // Create other roles with specific permissions
+        for (role_name, role_slug, perms) in &non_admin_roles {
             let role_row: (String,) = sqlx::query_as(
                 "INSERT INTO roles (organisation_id, name, slug, description, is_system)
                  VALUES ($1, $2, $3, $4, true)
@@ -3908,10 +3934,6 @@ impl MutationRoot {
 
             let role_uuid = uuid::Uuid::parse_str(&role_row.0)
                 .map_err(|_| async_graphql::Error::new("Invalid role id"))?;
-
-            if *role_slug == "admin" {
-                admin_role_id = Some(role_uuid);
-            }
 
             for code in perms {
                 sqlx::query(

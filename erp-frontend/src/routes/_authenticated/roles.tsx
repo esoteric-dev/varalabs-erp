@@ -267,27 +267,25 @@ function RolesPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-400 font-mono">{role.slug}</span>
+                  <button
+                    onClick={() => startEditing(role)}
+                    className="p-1 text-gray-400 hover:text-teal-600 transition-colors"
+                    title="Edit role"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
                   {!role.isSystem && (
-                    <>
-                      <button
-                        onClick={() => startEditing(role)}
-                        className="p-1 text-gray-400 hover:text-teal-600 transition-colors"
-                        title="Edit role"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm('Delete this role?')) {
-                            deleteRoleMutation.mutate(role.id)
-                          }
-                        }}
-                        className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                        title="Delete role"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </>
+                    <button
+                      onClick={() => {
+                        if (confirm('Delete this role?')) {
+                          deleteRoleMutation.mutate(role.id)
+                        }
+                      }}
+                      className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                      title="Delete role"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   )}
                 </div>
               </div>
