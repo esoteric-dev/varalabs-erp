@@ -1,6 +1,7 @@
 import { gql } from 'graphql-request'
 import type { UserRole } from '../../routes/__root'
 import { gqlClient } from '../graphql-client'
+import { API_BASE } from '../api-base'
 
 // --------------- Types ---------------
 
@@ -477,7 +478,7 @@ export async function uploadMyPhoto(file: File): Promise<{ photoUrl: string; siz
   const formData = new FormData()
   formData.append('photo', file)
 
-  const res = await fetch('/api/me/photo', {
+  const res = await fetch(`${API_BASE}/api/me/photo`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,

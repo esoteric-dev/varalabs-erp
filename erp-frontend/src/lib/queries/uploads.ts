@@ -1,9 +1,11 @@
+import { API_BASE } from '../api-base'
+
 export async function uploadStudentPhoto(studentId: string, file: File): Promise<{ photoUrl: string; sizeBytes: number }> {
   const token = localStorage.getItem('authToken')
   const formData = new FormData()
   formData.append('photo', file)
 
-  const res = await fetch(`/api/students/${studentId}/photo`, {
+  const res = await fetch(`${API_BASE}/api/students/${studentId}/photo`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
@@ -22,7 +24,7 @@ export async function uploadUserPhoto(userId: string, file: File): Promise<{ pho
   const formData = new FormData()
   formData.append('photo', file)
 
-  const res = await fetch(`/api/users/${userId}/photo`, {
+  const res = await fetch(`${API_BASE}/api/users/${userId}/photo`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
