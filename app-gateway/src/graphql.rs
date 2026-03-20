@@ -3829,7 +3829,7 @@ impl MutationRoot {
         let admin_user: User = sqlx::query_as(
             "INSERT INTO users (name, email, password_hash, system_role, phone, tenant_id)
              VALUES ($1, $2, $3, 'user', NULL, $4)
-             RETURNING id::text, name, email, system_role, phone",
+             RETURNING id::text, name, email, system_role, phone, photo_url",
         )
         .bind(format!("{} Admin", name))
         .bind(&admin_email)
