@@ -83,6 +83,19 @@ jobs:
           strip_components: 1
           overwrite: true
 
+      - name: Verify deployment files on VM
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USERNAME }}
+          password: ${{ secrets.VM_PASSWORD }}
+          script: |
+            set -e
+            cd ~/erp-deployment
+            ls -lah
+            test -f docker-compose.yml
+            test -f nginx.conf
+
       - name: Execute Docker Compose on Azure VM via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
