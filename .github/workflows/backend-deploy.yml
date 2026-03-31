@@ -131,7 +131,8 @@ jobs:
             docker pull "${FRONTEND_IMG}"
 
             echo "── Starting services ──"
-            docker compose up -d --remove-orphans --force-recreate app-gateway nginx-proxy
+            docker compose down --remove-orphans 2>/dev/null || true
+            docker compose up -d
 
             echo "── Waiting for containers to stabilise (30s) ──"
             sleep 30
