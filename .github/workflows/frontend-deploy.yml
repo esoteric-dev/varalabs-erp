@@ -76,49 +76,49 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-push
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Encode deployment files
-        id: files
-        run: |
-          echo "compose=$(base64 -w 0 deployment/docker-compose.yml)" >> $GITHUB_OUTPUT
-          echo "nginx=$(base64 -w 0 deployment/nginx.conf)" >> $GITHUB_OUTPUT
-
-      - name: Deploy to Azure VM
+      - name: Transfer configs and deploy
         uses: appleboy/ssh-action@v1.2.0
         env:
           BACKEND_IMG: ${{ needs.build-and-push.outputs.backend_image }}
           FRONTEND_IMG: ${{ needs.build-and-push.outputs.frontend_image }}
-          COMPOSE_B64: ${{ steps.files.outputs.compose }}
-          NGINX_B64: ${{ steps.files.outputs.nginx }}
+          GH_TOKEN: ${{ secrets.GH_PAT_FOR_VM }}
+          GH_REPO: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USERNAME }}
           password: ${{ secrets.VM_PASSWORD }}
-          envs: BACKEND_IMG,FRONTEND_IMG,COMPOSE_B64,NGINX_B64
+          envs: BACKEND_IMG,FRONTEND_IMG,GH_TOKEN,GH_REPO,GH_SHA
           script: |
             set -e
             mkdir -p ~/erp-deployment
             cd ~/erp-deployment
 
-            # Decode deployment files from base64
-            echo "${COMPOSE_B64}" | base64 -d > docker-compose.yml
-            echo "${NGINX_B64}" | base64 -d > nginx.conf
-            echo "==> Deployment files written successfully"
+            # Download deployment files directly from the repo
+            curl -sfL -H "Authorization: token ${GH_TOKEN}" \
+              "https://raw.githubusercontent.com/${GH_REPO}/${GH_SHA}/deployment/docker-compose.yml" \
+              -o docker-compose.yml
+            curl -sfL -H "Authorization: token ${GH_TOKEN}" \
+              "https://raw.githubusercontent.com/${GH_REPO}/${GH_SHA}/deployment/nginx.conf" \
+              -o nginx.conf
+
+            # Verify files are not empty
+            test -s docker-compose.yml || { echo "ERROR: docker-compose.yml is empty"; exit 1; }
+            test -s nginx.conf || { echo "ERROR: nginx.conf is empty"; exit 1; }
+            echo "==> Deployment files downloaded ($(wc -c < docker-compose.yml) bytes compose, $(wc -c < nginx.conf) bytes nginx)"
 
             # Login to GitHub Container Registry
-            echo "${{ secrets.GH_PAT_FOR_VM }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            echo "${GH_TOKEN}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-            # Write .env file with all runtime config
-            cat > .env << EOF
-            DATABASE_URL=${{ secrets.DATABASE_URL }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            BIND_ADDR=0.0.0.0:8080
-            UPLOADS_DIR=/app/uploads
-            BACKEND_IMAGE=${BACKEND_IMG}
-            FRONTEND_IMAGE=${FRONTEND_IMG}
-            EOF
+            # Write .env file — no leading spaces!
+            printf '%s\n' \
+              "DATABASE_URL=${{ secrets.DATABASE_URL }}" \
+              "JWT_SECRET=${{ secrets.JWT_SECRET }}" \
+              "BIND_ADDR=0.0.0.0:8080" \
+              "UPLOADS_DIR=/app/uploads" \
+              "BACKEND_IMAGE=${BACKEND_IMG}" \
+              "FRONTEND_IMAGE=${FRONTEND_IMG}" \
+              > .env
 
             echo "==> Pulling images..."
             docker pull "${BACKEND_IMG}"
@@ -133,7 +133,6 @@ jobs:
             echo "==> Container status:"
             docker compose ps
 
-            # Prune old unused images to save disk space
             echo "==> Cleaning up old images..."
             docker image prune -f
 
