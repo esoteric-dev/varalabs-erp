@@ -85,7 +85,7 @@ jobs:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USERNAME }}
           password: ${{ secrets.VM_PASSWORD }}
-          source: "deployment/docker-compose.yml,deployment/nginx.conf"
+          source: "deployment/*"
           target: "/home/${{ secrets.VM_USERNAME }}/erp-deployment"
           strip_components: 1
           overwrite: true
