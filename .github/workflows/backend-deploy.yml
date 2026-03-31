@@ -90,8 +90,9 @@ jobs:
           username: ${{ secrets.VM_USERNAME }}
           password: ${{ secrets.VM_PASSWORD }}
           source: "deployment/docker-compose.yml,deployment/nginx.conf"
-          target: "~/erp-deployment"
+          target: "/home/${{ secrets.VM_USERNAME }}/erp-deployment"
           strip_components: 1
+          overwrite: true
 
       - name: Execute Docker Compose on Azure VM via SSH
         uses: appleboy/ssh-action@v1.2.0
