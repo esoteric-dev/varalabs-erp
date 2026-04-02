@@ -29,3 +29,4 @@ erp-frontend/dist
 erp-frontend/dist-ssr
 erp-frontend/*.local
 app-gateway/.env
+QWEN*

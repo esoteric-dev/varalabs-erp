@@ -1,0 +1,958 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Synapse - Modern School ERP Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --teal-50: #f0fdfa;
+        --teal-100: #ccfbf1;
+        --teal-200: #99f6e4;
+        --teal-300: #5eead4;
+        --teal-400: #2dd4bf;
+        --teal-500: #14b8a6;
+        --teal-600: #0d9488;
+        --teal-700: #0f766e;
+        --teal-800: #115e59;
+        --teal-900: #134e4a;
+
+        --slate-50: #f8fafc;
+        --slate-100: #f1f5f9;
+        --slate-200: #e2e8f0;
+        --slate-300: #cbd5e1;
+        --slate-400: #94a3b8;
+        --slate-500: #64748b;
+        --slate-600: #475569;
+        --slate-700: #334155;
+        --slate-800: #1e293b;
+        --slate-900: #0f172a;
+
+        --primary: var(--teal-500);
+        --primary-hover: var(--teal-600);
+        --primary-light: var(--teal-50);
+        --primary-border: var(--teal-200);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        font-family:
+          "Inter",
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: #ffffff;
+        color: var(--slate-900);
+        min-height: 100vh;
+        line-height: 1.6;
+      }
+
+      /* ── Navbar ── */
+      .navbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 48px;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid var(--slate-200);
+        z-index: 1000;
+      }
+
+      .navbar-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .navbar-left .logo {
+        width: 40px;
+        height: 40px;
+        background: linear-gradient(135deg, var(--teal-500), var(--teal-600));
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        box-shadow: 0 2px 8px rgba(20, 184, 166, 0.3);
+      }
+
+      .navbar-left span {
+        font-size: 1.25rem;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+        color: var(--slate-900);
+      }
+
+      .navbar-right {
+        display: flex;
+        gap: 32px;
+        align-items: center;
+      }
+
+      .navbar-right a {
+        text-decoration: none;
+        color: var(--slate-600);
+        font-weight: 500;
+        font-size: 0.95rem;
+        transition: color 0.2s;
+      }
+
+      .navbar-right a:hover {
+        color: var(--teal-600);
+      }
+
+      .navbar-right a.nav-cta {
+        background: linear-gradient(135deg, var(--teal-500), var(--teal-600));
+        color: #fff;
+        padding: 12px 24px;
+        border-radius: 10px;
+        font-weight: 600;
+        box-shadow: 0 2px 8px rgba(20, 184, 166, 0.3);
+        transition: all 0.2s;
+      }
+
+      .navbar-right a.nav-cta:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(20, 184, 166, 0.4);
+      }
+
+      .navbar-right a.login-link {
+        color: var(--teal-600);
+        font-weight: 600;
+      }
+
+      /* ── Hero Section ── */
+      .hero {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 120px 48px 80px;
+        background: linear-gradient(180deg, var(--teal-50) 0%, #ffffff 100%);
+      }
+
+      .hero-content {
+        max-width: 1200px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 80px;
+        align-items: center;
+      }
+
+      .hero-text {
+        animation: fadeInUp 0.8s ease-out;
+      }
+
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--teal-100);
+        border: 1px solid var(--teal-200);
+        padding: 8px 16px;
+        border-radius: 100px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--teal-700);
+        margin-bottom: 24px;
+      }
+
+      .hero-badge .dot {
+        width: 8px;
+        height: 8px;
+        background: var(--teal-500);
+        border-radius: 50%;
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.5;
+          transform: scale(1.2);
+        }
+      }
+
+      .hero-text h1 {
+        font-size: 3.75rem;
+        font-weight: 900;
+        line-height: 1.1;
+        letter-spacing: -0.04em;
+        margin-bottom: 24px;
+        color: var(--slate-900);
+      }
+
+      .hero-text h1 .teal {
+        color: var(--teal-600);
+      }
+
+      .hero-text p {
+        font-size: 1.25rem;
+        color: var(--slate-600);
+        margin-bottom: 40px;
+        line-height: 1.7;
+      }
+
+      .hero-form {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 40px;
+      }
+
+      .hero-form input {
+        flex: 1;
+        padding: 16px 24px;
+        background: #fff;
+        border: 2px solid var(--slate-200);
+        border-radius: 12px;
+        font-size: 1rem;
+        color: var(--slate-900);
+        font-family: inherit;
+        transition: all 0.2s;
+      }
+
+      .hero-form input:focus {
+        outline: none;
+        border-color: var(--teal-500);
+        box-shadow: 0 0 0 4px var(--teal-100);
+      }
+
+      .hero-form input::placeholder {
+        color: var(--slate-400);
+      }
+
+      .hero-form button {
+        background: linear-gradient(135deg, var(--teal-500), var(--teal-600));
+        color: #fff;
+        border: none;
+        padding: 16px 32px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 2px 8px rgba(20, 184, 166, 0.3);
+      }
+
+      .hero-form button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 16px rgba(20, 184, 166, 0.4);
+      }
+
+      .hero-stats {
+        display: flex;
+        gap: 48px;
+        padding-top: 32px;
+        border-top: 1px solid var(--slate-200);
+      }
+
+      .stat {
+        text-align: left;
+      }
+
+      .stat-value {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: var(--teal-600);
+        line-height: 1;
+      }
+
+      .stat-label {
+        font-size: 0.875rem;
+        color: var(--slate-500);
+        margin-top: 8px;
+      }
+
+      /* ── Hero Visual ── */
+      .hero-visual {
+        position: relative;
+        animation: fadeInUp 0.8s ease-out 0.2s both;
+      }
+
+      .hero-card {
+        background: #fff;
+        border-radius: 20px;
+        padding: 32px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1);
+        border: 1px solid var(--slate-200);
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 24px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--slate-200);
+      }
+
+      .card-icon {
+        width: 48px;
+        height: 48px;
+        background: linear-gradient(135deg, var(--teal-500), var(--teal-600));
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+      }
+
+      .card-title {
+        font-size: 1.125rem;
+        font-weight: 700;
+        color: var(--slate-900);
+      }
+
+      .card-subtitle {
+        font-size: 0.875rem;
+        color: var(--slate-500);
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+      }
+
+      .card-item {
+        background: var(--slate-50);
+        border-radius: 12px;
+        padding: 20px;
+        transition: all 0.2s;
+        border: 1px solid var(--slate-100);
+      }
+
+      .card-item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.06);
+        border-color: var(--teal-200);
+      }
+
+      .card-item-icon {
+        width: 40px;
+        height: 40px;
+        background: var(--teal-100);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        margin-bottom: 12px;
+      }
+
+      .card-item-label {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--slate-600);
+        margin-bottom: 4px;
+      }
+
+      .card-item-value {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--teal-600);
+      }
+
+      .floating-badge {
+        position: absolute;
+        background: #fff;
+        border: 1px solid var(--slate-200);
+        border-radius: 14px;
+        padding: 14px 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        animation: floatBadge 3s ease-in-out infinite;
+      }
+
+      .floating-badge.badge-1 {
+        top: -16px;
+        right: -24px;
+        animation-delay: 0s;
+      }
+
+      .floating-badge.badge-2 {
+        bottom: 32px;
+        left: -32px;
+        animation-delay: 1.5s;
+      }
+
+      @keyframes floatBadge {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-8px);
+        }
+      }
+
+      .badge-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.125rem;
+      }
+
+      .badge-icon.success {
+        background: var(--teal-100);
+        color: var(--teal-600);
+      }
+
+      .badge-icon.warning {
+        background: #fef3c7;
+        color: #d97706;
+      }
+
+      .badge-text {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--slate-900);
+      }
+
+      .badge-subtext {
+        font-size: 0.75rem;
+        color: var(--slate-500);
+      }
+
+      /* ── Features Section ── */
+      .features {
+        padding: 120px 48px;
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      .section-header {
+        text-align: center;
+        margin-bottom: 80px;
+      }
+
+      .section-label {
+        display: inline-block;
+        background: var(--teal-100);
+        border: 1px solid var(--teal-200);
+        padding: 8px 16px;
+        border-radius: 100px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--teal-700);
+        margin-bottom: 16px;
+      }
+
+      .section-header h2 {
+        font-size: 2.75rem;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        margin-bottom: 16px;
+        color: var(--slate-900);
+      }
+
+      .section-header p {
+        font-size: 1.125rem;
+        color: var(--slate-600);
+        max-width: 600px;
+        margin: 0 auto;
+      }
+
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+      }
+
+      .feature-card {
+        background: #fff;
+        border: 1px solid var(--slate-200);
+        border-radius: 16px;
+        padding: 32px;
+        transition: all 0.3s;
+      }
+
+      .feature-card:hover {
+        transform: translateY(-4px);
+        border-color: var(--teal-300);
+        box-shadow: 0 20px 40px rgba(20, 184, 166, 0.1);
+      }
+
+      .feature-icon {
+        width: 56px;
+        height: 56px;
+        background: linear-gradient(135deg, var(--teal-500), var(--teal-600));
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin-bottom: 24px;
+      }
+
+      .feature-card h3 {
+        font-size: 1.125rem;
+        font-weight: 700;
+        margin-bottom: 12px;
+        color: var(--slate-900);
+      }
+
+      .feature-card p {
+        color: var(--slate-600);
+        line-height: 1.7;
+        font-size: 0.95rem;
+      }
+
+      /* ── CTA Section ── */
+      .cta {
+        padding: 120px 48px;
+        text-align: center;
+        background: linear-gradient(180deg, var(--teal-50) 0%, #ffffff 100%);
+      }
+
+      .cta-card {
+        max-width: 800px;
+        margin: 0 auto;
+        background: linear-gradient(135deg, var(--teal-500), var(--teal-600));
+        border-radius: 28px;
+        padding: 80px 48px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .cta-card::before {
+        content: "";
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.15) 0%,
+          transparent 70%
+        );
+        animation: rotate 30s linear infinite;
+      }
+
+      @keyframes rotate {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .cta-content {
+        position: relative;
+        z-index: 1;
+      }
+
+      .cta h2 {
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin-bottom: 16px;
+        color: #fff;
+      }
+
+      .cta p {
+        font-size: 1.125rem;
+        opacity: 0.95;
+        margin-bottom: 40px;
+        color: #fff;
+      }
+
+      .cta-buttons {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .cta-btn {
+        padding: 16px 32px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 1rem;
+        text-decoration: none;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .cta-btn.primary {
+        background: #fff;
+        color: var(--teal-600);
+      }
+
+      .cta-btn.primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+      }
+
+      .cta-btn.secondary {
+        background: rgba(255, 255, 255, 0.2);
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+      }
+
+      .cta-btn.secondary:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
+
+      /* ── Footer ── */
+      footer {
+        border-top: 1px solid var(--slate-200);
+        padding: 48px 48px 32px;
+        text-align: center;
+        background: #fff;
+      }
+
+      .footer-logo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .footer-logo .logo {
+        width: 36px;
+        height: 36px;
+        background: linear-gradient(135deg, var(--teal-500), var(--teal-600));
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+      }
+
+      .footer-logo span {
+        font-size: 1.125rem;
+        font-weight: 800;
+        color: var(--slate-900);
+      }
+
+      .footer-text {
+        color: var(--slate-500);
+        font-size: 0.875rem;
+      }
+
+      /* ── Responsive ── */
+      @media (max-width: 1024px) {
+        .hero-content {
+          grid-template-columns: 1fr;
+          gap: 60px;
+        }
+
+        .hero-text {
+          text-align: center;
+        }
+
+        .hero-form {
+          max-width: 500px;
+          margin-left: auto;
+          margin-right: auto;
+        }
+
+        .hero-stats {
+          justify-content: center;
+        }
+
+        .features-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 768px) {
+        .navbar {
+          padding: 16px 24px;
+        }
+
+        .navbar-right a:not(.nav-cta):not(.login-link) {
+          display: none;
+        }
+
+        .hero {
+          padding: 100px 24px 60px;
+        }
+
+        .hero-text h1 {
+          font-size: 2.5rem;
+        }
+
+        .hero-form {
+          flex-direction: column;
+        }
+
+        .hero-stats {
+          flex-direction: column;
+          gap: 24px;
+        }
+
+        .features {
+          padding: 80px 24px;
+        }
+
+        .features-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section-header h2 {
+          font-size: 2rem;
+        }
+
+        .cta-card {
+          padding: 60px 24px;
+        }
+
+        .cta h2 {
+          font-size: 1.75rem;
+        }
+
+        .floating-badge {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="navbar">
+      <div class="navbar-left">
+        <div class="logo">◈</div>
+        <span>Synapse</span>
+      </div>
+      <div class="navbar-right">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#resources">Resources</a>
+        <a href="/login" class="login-link">Login</a>
+        <a href="/signup" class="nav-cta">Get Started</a>
+      </div>
+    </nav>
+
+    <section class="hero">
+      <div class="hero-content">
+        <div class="hero-text">
+          <div class="hero-badge">
+            <span class="dot"></span>
+            Trusted by 500+ institutions
+          </div>
+          <h1>
+            The Future of<br />
+            <span class="teal">School Management</span>
+          </h1>
+          <p>
+            Streamline every aspect of your institution with our all-in-one ERP
+            platform. From admissions to graduations, we've got you covered.
+          </p>
+          <form
+            class="hero-form"
+            onsubmit="
+              event.preventDefault();
+              window.location.href = '/signup';
+            "
+          >
+            <input type="email" placeholder="Enter your work email" required />
+            <button type="submit">Start Free Trial</button>
+          </form>
+          <div class="hero-stats">
+            <div class="stat">
+              <div class="stat-value">500+</div>
+              <div class="stat-label">Schools onboarded</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">99.9%</div>
+              <div class="stat-label">Uptime guaranteed</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">24/7</div>
+              <div class="stat-label">Premium support</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <div class="hero-card">
+            <div class="card-header">
+              <div class="card-icon">📊</div>
+              <div>
+                <div class="card-title">Dashboard Overview</div>
+                <div class="card-subtitle">Real-time insights</div>
+              </div>
+            </div>
+            <div class="card-grid">
+              <div class="card-item">
+                <div class="card-item-icon">👨‍🎓</div>
+                <div class="card-item-label">Students</div>
+                <div class="card-item-value">2,847</div>
+              </div>
+              <div class="card-item">
+                <div class="card-item-icon">👩‍🏫</div>
+                <div class="card-item-label">Teachers</div>
+                <div class="card-item-value">186</div>
+              </div>
+              <div class="card-item">
+                <div class="card-item-icon">💰</div>
+                <div class="card-item-label">Fees Collected</div>
+                <div class="card-item-value">₹4.2Cr</div>
+              </div>
+              <div class="card-item">
+                <div class="card-item-icon">✅</div>
+                <div class="card-item-label">Attendance</div>
+                <div class="card-item-value">94.5%</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="floating-badge badge-1">
+            <div class="badge-icon success">✓</div>
+            <div>
+              <div class="badge-text">Fees Received</div>
+              <div class="badge-subtext">₹2.4L just now</div>
+            </div>
+          </div>
+
+          <div class="floating-badge badge-2">
+            <div class="badge-icon warning">📢</div>
+            <div>
+              <div class="badge-text">New Notice</div>
+              <div class="badge-subtext">Exam schedule released</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="section-header">
+        <span class="section-label">Features</span>
+        <h2>Everything your school needs</h2>
+        <p>
+          Powerful features designed by educators, for educators. Manage your
+          entire institution from one beautiful dashboard.
+        </p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🎓</div>
+          <h3>Student Management</h3>
+          <p>
+            Complete student lifecycle management from admission to alumni.
+            Track academics, attendance, and behavior in one place.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">💳</div>
+          <h3>Fee Collection</h3>
+          <p>
+            Automated fee collection with online payments, reminders, and
+            receipts. Reduce outstanding fees by up to 80%.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📅</div>
+          <h3>Attendance Tracking</h3>
+          <p>
+            Digital attendance for students and staff. Auto-notifications to
+            parents and comprehensive reports.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📚</div>
+          <h3>Exam & Grades</h3>
+          <p>
+            Create exams, record marks, and generate report cards. Custom
+            grading systems and analytics.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">👥</div>
+          <h3>Staff & Payroll</h3>
+          <p>
+            Manage hiring, attendance, and payroll for all staff. Auto-payslips
+            and tax calculations.
+          </p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📱</div>
+          <h3>Parent Portal</h3>
+          <p>
+            Keep parents engaged with real-time updates on attendance, grades,
+            fees, and school announcements.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="cta-card">
+        <div class="cta-content">
+          <h2>Ready to transform your school?</h2>
+          <p>
+            Join hundreds of institutions already using Synapse to streamline
+            operations.
+          </p>
+          <div class="cta-buttons">
+            <a href="/signup" class="cta-btn primary"> Start Free Trial → </a>
+            <a href="#demo" class="cta-btn secondary"> Book a Demo </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="footer-logo">
+        <div class="logo">◈</div>
+        <span>Synapse</span>
+      </div>
+      <p class="footer-text">
+        &copy; 2026 Synapse by Vara Labs. All rights reserved.
+      </p>
+    </footer>
+  </body>
+</html>
