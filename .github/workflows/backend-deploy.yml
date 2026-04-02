@@ -77,29 +77,29 @@ jobs:
       - name: Prepare deployment directory on VM
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USERNAME }}
-          password: ${{ secrets.VM_PASSWORD }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
           script: |
             mkdir -p ~/erp-deployment
 
       - name: Copy deployment configs to VM
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USERNAME }}
-          password: ${{ secrets.VM_PASSWORD }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
           source: "deployment/*"
-          target: "/home/${{ secrets.VM_USERNAME }}/erp-deployment"
+          target: "/home/${{ secrets.DEPLOY_USER }}/erp-deployment"
           strip_components: 1
           overwrite: true
 
       - name: Verify deployment files on VM
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USERNAME }}
-          password: ${{ secrets.VM_PASSWORD }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
           script: |
             set -e
             cd ~/erp-deployment
@@ -110,21 +110,21 @@ jobs:
       - name: Execute Docker Compose on Azure VM via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USERNAME }}
-          password: ${{ secrets.VM_PASSWORD }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
           script: |
             # Ensure the docker directory exists
             mkdir -p ~/erp-deployment
             cd ~/erp-deployment
 
             # Login to Github Container Registry
-            echo "${{ secrets.GH_PAT_FOR_VM }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            echo "${{ secrets.DEPLOY_GH_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
             # Create/Update the .env file from GitHub secrets
             cat > .env << 'ENVFILE'
-            DATABASE_URL=${{ secrets.DATABASE_URL }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            DATABASE_URL=${{ secrets.APP_DATABASE_URL }}
+            JWT_SECRET=${{ secrets.APP_JWT_SECRET }}
             BIND_ADDR=0.0.0.0:8080
             BACKEND_IMAGE=ghcr.io/${{ env.BACKEND_IMAGE_NAME }}:${{ github.sha }}
             FRONTEND_IMAGE=ghcr.io/${{ env.FRONTEND_IMAGE_NAME }}:latest
