@@ -13,6 +13,7 @@ import type { AdminTodo } from '../lib/queries/dashboard'
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async ({ context }) => {
     if (context.authStatus !== 'authenticated') {
+      // Redirect to welcome page on root domain, login on subdomains
       throw redirect({ to: context.orgSlug ? '/login' : '/welcome' })
     }
     const currentUser = await context.queryClient.ensureQueryData({

@@ -5,7 +5,7 @@ export const Route = createFileRoute('/welcome')({
   beforeLoad: ({ context }) => {
     // If authenticated, redirect to dashboard
     if (context.authStatus === 'authenticated') {
-      throw redirect({ to: '/_authenticated/' })
+      throw redirect({ to: '/' })
     }
   },
   component: LandingPage,
