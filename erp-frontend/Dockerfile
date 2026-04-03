@@ -24,15 +24,22 @@ RUN bun run build
 # We'll use a lightweight NGINX server to serve the static frontend assets dynamically
 FROM nginx:alpine
 
-# Copy custom Nginx configuration to route all traffic to index.html (SPA Fallback)
+# Copy custom Nginx configuration to serve static assets and SPA fallback
 RUN echo 'server { \
     listen       80; \
     server_name  localhost; \
+    root   /usr/share/nginx/html; \
+    index  index.html index.htm; \
+    \
     location / { \
-        root   /usr/share/nginx/html; \
-        index  index.html index.htm; \
         try_files $uri $uri/ /index.html; \
     } \
+    \
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ { \
+        expires 7d; \
+        add_header Cache-Control "public, max-age=604800, immutable"; \
+    } \
+    \
     error_page   500 502 503 504  /50x.html; \
     location = /50x.html { \
         root   /usr/share/nginx/html; \
