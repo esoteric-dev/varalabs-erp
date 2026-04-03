@@ -24,6 +24,9 @@ RUN bun run build
 # We'll use a lightweight NGINX server to serve the static frontend assets dynamically
 FROM nginx:alpine
 
+# Copy built assets from the builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
 # Copy custom Nginx configuration to serve static assets and SPA fallback
 RUN echo 'server { \
     listen       80; \
