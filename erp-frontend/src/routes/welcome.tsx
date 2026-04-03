@@ -1,7 +1,13 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, redirect } from '@tanstack/react-router'
 import '../LandingPage.css'
 
 export const Route = createFileRoute('/welcome')({
+  beforeLoad: ({ context }) => {
+    // If authenticated, redirect to dashboard
+    if (context.authStatus === 'authenticated') {
+      throw redirect({ to: '/_authenticated/' })
+    }
+  },
   component: LandingPage,
 })
 
