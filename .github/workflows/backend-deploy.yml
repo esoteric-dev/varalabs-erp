@@ -121,13 +121,17 @@ jobs:
             # Login to Github Container Registry
             echo "${{ secrets.DEPLOY_GH_PAT }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+            # Set image variables
+            BACKEND_IMAGE="ghcr.io/${{ env.BACKEND_IMAGE_NAME }}:${{ github.sha }}"
+            FRONTEND_IMAGE="ghcr.io/${{ env.FRONTEND_IMAGE_NAME }}:latest"
+
             # Create/Update the .env file from GitHub secrets
-            cat > .env << 'ENVFILE'
+            cat > .env << ENVFILE
             DATABASE_URL=${{ secrets.APP_DATABASE_URL }}
             JWT_SECRET=${{ secrets.APP_JWT_SECRET }}
             BIND_ADDR=0.0.0.0:8080
-            BACKEND_IMAGE=ghcr.io/${{ env.BACKEND_IMAGE_NAME }}:${{ github.sha }}
-            FRONTEND_IMAGE=ghcr.io/${{ env.FRONTEND_IMAGE_NAME }}:latest
+            BACKEND_IMAGE=${BACKEND_IMAGE}
+            FRONTEND_IMAGE=${FRONTEND_IMAGE}
             ENVFILE
 
             echo "Pulling the latest images..."
