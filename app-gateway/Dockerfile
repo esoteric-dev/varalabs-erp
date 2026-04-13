@@ -25,8 +25,23 @@ RUN cargo build --release --target x86_64-unknown-linux-musl
 # Production Serving Stage
 FROM alpine:3.18 AS runtime
 
-# Install CA certificates to enable outgoing HTTPS requests, and tzdata for timezone accuracy
-RUN apk add --no-cache ca-certificates tzdata
+# Runtime dependencies:
+#   - ca-certificates: outgoing HTTPS
+#   - tzdata: correct timestamps
+#   - chromium: headless PDF generation (replaces LaTeX/tectonic)
+#   - font packages: ensure rendered PDFs have readable Latin + Devanagari glyphs
+RUN apk add --no-cache \
+        ca-certificates \
+        tzdata \
+        chromium \
+        font-noto \
+        font-noto-extra \
+        ttf-freefont \
+        harfbuzz \
+        nss \
+        freetype \
+        freetype-dev \
+        ttf-liberation
 
 WORKDIR /app
 

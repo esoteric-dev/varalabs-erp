@@ -473,10 +473,10 @@ export async function updateMyProfile(
   return data.updateMyProfile
 }
 
-export async function uploadMyPhoto(file: File): Promise<{ photoUrl: string; sizeBytes: number }> {
+export async function uploadMyPhoto(blob: Blob): Promise<{ photoUrl: string; sizeBytes: number }> {
   const token = localStorage.getItem('authToken')
   const formData = new FormData()
-  formData.append('photo', file)
+  formData.append('photo', blob, 'photo.webp')
 
   const res = await fetch(`${API_BASE}/api/me/photo`, {
     method: 'POST',

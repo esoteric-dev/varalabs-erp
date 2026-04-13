@@ -19,11 +19,13 @@ import { Route as AuthenticatedRolesRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedPayrollRouteImport } from './routes/_authenticated/payroll'
+import { Route as AuthenticatedOnboardingConfigRouteImport } from './routes/_authenticated/onboarding-config'
 import { Route as AuthenticatedNoticesRouteImport } from './routes/_authenticated/notices'
 import { Route as AuthenticatedMyStudentsRouteImport } from './routes/_authenticated/my-students'
 import { Route as AuthenticatedMyPayslipsRouteImport } from './routes/_authenticated/my-payslips'
 import { Route as AuthenticatedLeaveRouteImport } from './routes/_authenticated/leave'
 import { Route as AuthenticatedFeesRouteImport } from './routes/_authenticated/fees'
+import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authenticated/documents'
 import { Route as AuthenticatedAttendanceRouteImport } from './routes/_authenticated/attendance'
 import { Route as AuthenticatedAssignmentsRouteImport } from './routes/_authenticated/assignments'
 import { Route as AuthenticatedAdmissionsRouteImport } from './routes/_authenticated/admissions'
@@ -83,6 +85,12 @@ const AuthenticatedPayrollRoute = AuthenticatedPayrollRouteImport.update({
   path: '/payroll',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedOnboardingConfigRoute =
+  AuthenticatedOnboardingConfigRouteImport.update({
+    id: '/onboarding-config',
+    path: '/onboarding-config',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedNoticesRoute = AuthenticatedNoticesRouteImport.update({
   id: '/notices',
   path: '/notices',
@@ -106,6 +114,11 @@ const AuthenticatedLeaveRoute = AuthenticatedLeaveRouteImport.update({
 const AuthenticatedFeesRoute = AuthenticatedFeesRouteImport.update({
   id: '/fees',
   path: '/fees',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedDocumentsRoute = AuthenticatedDocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedAttendanceRoute = AuthenticatedAttendanceRouteImport.update({
@@ -168,11 +181,13 @@ export interface FileRoutesByFullPath {
   '/admissions': typeof AuthenticatedAdmissionsRoute
   '/assignments': typeof AuthenticatedAssignmentsRoute
   '/attendance': typeof AuthenticatedAttendanceRoute
+  '/documents': typeof AuthenticatedDocumentsRoute
   '/fees': typeof AuthenticatedFeesRoute
   '/leave': typeof AuthenticatedLeaveRoute
   '/my-payslips': typeof AuthenticatedMyPayslipsRoute
   '/my-students': typeof AuthenticatedMyStudentsRoute
   '/notices': typeof AuthenticatedNoticesRoute
+  '/onboarding-config': typeof AuthenticatedOnboardingConfigRoute
   '/payroll': typeof AuthenticatedPayrollRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/reports': typeof AuthenticatedReportsRoute
@@ -192,11 +207,13 @@ export interface FileRoutesByTo {
   '/admissions': typeof AuthenticatedAdmissionsRoute
   '/assignments': typeof AuthenticatedAssignmentsRoute
   '/attendance': typeof AuthenticatedAttendanceRoute
+  '/documents': typeof AuthenticatedDocumentsRoute
   '/fees': typeof AuthenticatedFeesRoute
   '/leave': typeof AuthenticatedLeaveRoute
   '/my-payslips': typeof AuthenticatedMyPayslipsRoute
   '/my-students': typeof AuthenticatedMyStudentsRoute
   '/notices': typeof AuthenticatedNoticesRoute
+  '/onboarding-config': typeof AuthenticatedOnboardingConfigRoute
   '/payroll': typeof AuthenticatedPayrollRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/reports': typeof AuthenticatedReportsRoute
@@ -219,11 +236,13 @@ export interface FileRoutesById {
   '/_authenticated/admissions': typeof AuthenticatedAdmissionsRoute
   '/_authenticated/assignments': typeof AuthenticatedAssignmentsRoute
   '/_authenticated/attendance': typeof AuthenticatedAttendanceRoute
+  '/_authenticated/documents': typeof AuthenticatedDocumentsRoute
   '/_authenticated/fees': typeof AuthenticatedFeesRoute
   '/_authenticated/leave': typeof AuthenticatedLeaveRoute
   '/_authenticated/my-payslips': typeof AuthenticatedMyPayslipsRoute
   '/_authenticated/my-students': typeof AuthenticatedMyStudentsRoute
   '/_authenticated/notices': typeof AuthenticatedNoticesRoute
+  '/_authenticated/onboarding-config': typeof AuthenticatedOnboardingConfigRoute
   '/_authenticated/payroll': typeof AuthenticatedPayrollRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
@@ -247,11 +266,13 @@ export interface FileRouteTypes {
     | '/admissions'
     | '/assignments'
     | '/attendance'
+    | '/documents'
     | '/fees'
     | '/leave'
     | '/my-payslips'
     | '/my-students'
     | '/notices'
+    | '/onboarding-config'
     | '/payroll'
     | '/profile'
     | '/reports'
@@ -271,11 +292,13 @@ export interface FileRouteTypes {
     | '/admissions'
     | '/assignments'
     | '/attendance'
+    | '/documents'
     | '/fees'
     | '/leave'
     | '/my-payslips'
     | '/my-students'
     | '/notices'
+    | '/onboarding-config'
     | '/payroll'
     | '/profile'
     | '/reports'
@@ -297,11 +320,13 @@ export interface FileRouteTypes {
     | '/_authenticated/admissions'
     | '/_authenticated/assignments'
     | '/_authenticated/attendance'
+    | '/_authenticated/documents'
     | '/_authenticated/fees'
     | '/_authenticated/leave'
     | '/_authenticated/my-payslips'
     | '/_authenticated/my-students'
     | '/_authenticated/notices'
+    | '/_authenticated/onboarding-config'
     | '/_authenticated/payroll'
     | '/_authenticated/profile'
     | '/_authenticated/reports'
@@ -394,6 +419,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPayrollRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/onboarding-config': {
+      id: '/_authenticated/onboarding-config'
+      path: '/onboarding-config'
+      fullPath: '/onboarding-config'
+      preLoaderRoute: typeof AuthenticatedOnboardingConfigRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/notices': {
       id: '/_authenticated/notices'
       path: '/notices'
@@ -427,6 +459,13 @@ declare module '@tanstack/react-router' {
       path: '/fees'
       fullPath: '/fees'
       preLoaderRoute: typeof AuthenticatedFeesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/documents': {
+      id: '/_authenticated/documents'
+      path: '/documents'
+      fullPath: '/documents'
+      preLoaderRoute: typeof AuthenticatedDocumentsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/attendance': {
@@ -500,11 +539,13 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdmissionsRoute: typeof AuthenticatedAdmissionsRoute
   AuthenticatedAssignmentsRoute: typeof AuthenticatedAssignmentsRoute
   AuthenticatedAttendanceRoute: typeof AuthenticatedAttendanceRoute
+  AuthenticatedDocumentsRoute: typeof AuthenticatedDocumentsRoute
   AuthenticatedFeesRoute: typeof AuthenticatedFeesRoute
   AuthenticatedLeaveRoute: typeof AuthenticatedLeaveRoute
   AuthenticatedMyPayslipsRoute: typeof AuthenticatedMyPayslipsRoute
   AuthenticatedMyStudentsRoute: typeof AuthenticatedMyStudentsRoute
   AuthenticatedNoticesRoute: typeof AuthenticatedNoticesRoute
+  AuthenticatedOnboardingConfigRoute: typeof AuthenticatedOnboardingConfigRoute
   AuthenticatedPayrollRoute: typeof AuthenticatedPayrollRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
@@ -523,11 +564,13 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdmissionsRoute: AuthenticatedAdmissionsRoute,
   AuthenticatedAssignmentsRoute: AuthenticatedAssignmentsRoute,
   AuthenticatedAttendanceRoute: AuthenticatedAttendanceRoute,
+  AuthenticatedDocumentsRoute: AuthenticatedDocumentsRoute,
   AuthenticatedFeesRoute: AuthenticatedFeesRoute,
   AuthenticatedLeaveRoute: AuthenticatedLeaveRoute,
   AuthenticatedMyPayslipsRoute: AuthenticatedMyPayslipsRoute,
   AuthenticatedMyStudentsRoute: AuthenticatedMyStudentsRoute,
   AuthenticatedNoticesRoute: AuthenticatedNoticesRoute,
+  AuthenticatedOnboardingConfigRoute: AuthenticatedOnboardingConfigRoute,
   AuthenticatedPayrollRoute: AuthenticatedPayrollRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,

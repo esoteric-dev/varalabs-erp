@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Calendar, IndianRupee, Users, Clock, Plus, ChevronDown, ChevronUp, Search, X } from 'lucide-react'
+import { Calendar, IndianRupee, Users, Clock, Plus, ChevronDown, ChevronUp, Search, X, FileDown } from 'lucide-react'
 import { fetchPayrollRuns, fetchStaffSalaries, fetchPayrollEntries, createPayrollRun, setStaffSalary } from '../../lib/queries/payroll'
 import { fetchOrgUsers } from '../../lib/queries/org-users'
+import { generateDocument } from '../../lib/queries/documents'
 import type { PayrollRun, StaffSalary, PayrollEntry } from '../../lib/queries/payroll'
 
 export const Route = createFileRoute('/_authenticated/payroll')({
@@ -30,6 +31,7 @@ function PayrollPage() {
   const [runMonth, setRunMonth] = useState(new Date().getMonth() + 1)
   const [runYear, setRunYear] = useState(new Date().getFullYear())
   const [expandedRun, setExpandedRun] = useState<string | null>(null)
+  const [downloadingEntry, setDownloadingEntry] = useState<string | null>(null)
   const [salaryForm, setSalaryForm] = useState({ userId: '', basicPay: '', allowances: '', deductions: '', effectiveFrom: '' })
 
   const { data: runs = [], isLoading: loadingRuns } = useQuery<PayrollRun[]>({
@@ -346,10 +348,32 @@ function PayrollPage() {
                                   <div key={e.id} className="bg-white rounded-lg border border-gray-100 p-3">
                                     <div className="flex items-center justify-between mb-1">
                                       <span className="text-sm font-medium text-gray-800">{e.userName}</span>
-                                      <span className="text-sm font-bold text-teal-700">{formatCurrency(e.netPay)}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-bold text-teal-700">{formatCurrency(e.netPay)}</span>
+                                        <button
+                                          title={`Download payslip for ${e.userName}`}
+                                          disabled={downloadingEntry === e.id}
+                                          onClick={async () => {
+                                            setDownloadingEntry(e.id)
+                                            try {
+                                              await generateDocument(e.userId, 'payslip', { month: r.month, year: r.year })
+                                            } catch (err: any) {
+                                              alert(err.message || 'Failed to generate payslip')
+                                            } finally {
+                                              setDownloadingEntry(null)
+                                            }
+                                          }}
+                                          className="p-1 rounded text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors disabled:opacity-40"
+                                        >
+                                          {downloadingEntry === e.id
+                                            ? <span className="block w-3.5 h-3.5 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
+                                            : <FileDown className="w-3.5 h-3.5" />
+                                          }
+                                        </button>
+                                      </div>
                                     </div>
                                     <div className="text-xs text-gray-400">
-                                      Basic: {formatCurrency(e.basicPay)} + Allowances: {formatCurrency(e.allowances)} - Deductions: {formatCurrency(e.deductions)}
+                                      Basic: {formatCurrency(e.basicPay)} + Allowances: {formatCurrency(e.allowances)} − Deductions: {formatCurrency(e.deductions)}
                                     </div>
                                   </div>
                                 ))}

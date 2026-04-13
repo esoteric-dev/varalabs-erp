@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { IndianRupee, Plus, Send } from 'lucide-react'
+import { IndianRupee, Plus, Send, FileDown } from 'lucide-react'
 import { fetchFeeStructures, fetchFeeRecords, createFeeStructure, assignFeeToClass } from '../../lib/queries/fees'
 import { fetchClasses } from '../../lib/queries/dashboard'
 import { fetchMyStudent } from '../../lib/queries/students'
+import { generateFeeSlip } from '../../lib/queries/documents'
 import type { FeeStructure, FeeRecord } from '../../lib/queries/fees'
 import type { OrgRole } from '../../lib/queries/user'
 
@@ -276,6 +277,7 @@ function FeesPage() {
                   <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Paid</th>
                   <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Due Date</th>
+                  <th className="px-3 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -291,6 +293,15 @@ function FeesPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-sm text-gray-500">{r.dueDate}</td>
+                    <td className="px-3 py-3.5">
+                      <button
+                        title="Download fee receipt"
+                        onClick={() => generateFeeSlip(r.id).catch(e => alert(e.message))}
+                        className="p-1.5 rounded-md text-gray-400 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+                      >
+                        <FileDown className="w-4 h-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

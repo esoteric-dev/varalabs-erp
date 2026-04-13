@@ -30,3 +30,7 @@ erp-frontend/dist-ssr
 erp-frontend/*.local
 app-gateway/.env
 QWEN*
+design/*
+*.md
+.qwen
+.claude

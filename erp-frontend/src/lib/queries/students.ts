@@ -24,15 +24,26 @@ export interface AddStudentResult {
   generatedPassword: string
 }
 
+export interface CustomField {
+  id: string
+  label: string
+  type: string
+  required: boolean
+  placeholder?: string
+  helpText?: string
+  options?: string[]
+  order?: number
+}
+
 export interface StudentOnboardingConfig {
   sections: {
-    personalInfo: { enabled: boolean; mandatoryFields: string[] }
-    parentsGuardian: { enabled: boolean; mandatoryFields: string[] }
-    addressInfo: { enabled: boolean; mandatoryFields: string[] }
-    transportHostel: { enabled: boolean; mandatoryFields: string[] }
-    medicalHistory: { enabled: boolean; mandatoryFields: string[] }
-    previousSchool: { enabled: boolean; mandatoryFields: string[] }
-    otherDetails: { enabled: boolean; customFields: Array<{ id: string; label: string; type: string; required: boolean }> }
+    personalInfo: { enabled: boolean; mandatoryFields: string[]; customFields?: CustomField[] }
+    parentsGuardian: { enabled: boolean; mandatoryFields: string[]; customFields?: CustomField[] }
+    addressInfo: { enabled: boolean; mandatoryFields: string[]; customFields?: CustomField[] }
+    transportHostel: { enabled: boolean; mandatoryFields: string[]; customFields?: CustomField[] }
+    medicalHistory: { enabled: boolean; mandatoryFields: string[]; customFields?: CustomField[] }
+    previousSchool: { enabled: boolean; mandatoryFields: string[]; customFields?: CustomField[] }
+    otherDetails: { enabled: boolean; customFields?: CustomField[] }
   }
 }
 

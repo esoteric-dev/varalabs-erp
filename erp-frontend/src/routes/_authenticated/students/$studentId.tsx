@@ -10,6 +10,7 @@ import type { AttendanceRecord } from '../../../lib/queries/attendance'
 import type { FeeRecord } from '../../../lib/queries/fees'
 import type { StudentMark, Exam } from '../../../lib/queries/marks'
 import { useMemo, useState, useRef } from 'react'
+import { PhotoCropModal } from '../../../components/ui/PhotoCropModal'
 
 export const Route = createFileRoute('/_authenticated/students/$studentId')({
   component: StudentProfile,
@@ -42,6 +43,7 @@ function StudentProfile() {
   const queryClient = useQueryClient()
   const [selectedExamId, setSelectedExamId] = useState<string>('')
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [cropFile, setCropFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState<UpdateStudentInput>({})
@@ -73,7 +75,7 @@ function StudentProfile() {
   })
 
   const photoUploadMutation = useMutation({
-    mutationFn: (file: File) => uploadStudentPhoto(studentId, file),
+    mutationFn: (blob: Blob) => uploadStudentPhoto(studentId, blob),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['student', studentId] })
       queryClient.invalidateQueries({ queryKey: ['currentUser'] })
@@ -126,7 +128,8 @@ function StudentProfile() {
       return
     }
     setUploadError(null)
-    photoUploadMutation.mutate(file)
+    setCropFile(file)
+    e.target.value = ''
   }
 
   // Attendance stats
@@ -597,6 +600,15 @@ function StudentProfile() {
           </div>
         </div>
       </div>
+
+      {/* Photo crop modal */}
+      {cropFile && (
+        <PhotoCropModal
+          file={cropFile}
+          onSave={blob => { setCropFile(null); photoUploadMutation.mutate(blob) }}
+          onCancel={() => setCropFile(null)}
+        />
+      )}
     </div>
   )
 }

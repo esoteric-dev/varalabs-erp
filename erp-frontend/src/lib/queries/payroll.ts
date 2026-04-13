@@ -23,6 +23,7 @@ export interface PayrollRun {
 
 export interface PayrollEntry {
   id: string
+  userId: string
   userName: string
   basicPay: number
   allowances: number
@@ -62,6 +63,7 @@ const PAYROLL_ENTRIES_QUERY = gql`
   query PayrollEntries($runId: String!) {
     payrollEntries(runId: $runId) {
       id
+      userId
       userName
       basicPay
       allowances

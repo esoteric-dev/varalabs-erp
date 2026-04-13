@@ -9,10 +9,6 @@ export function StatCards({ summary }: StatCardsProps) {
 
   const fmt = (v: number) => v.toLocaleString('en-IN')
 
-  const attendanceRate = summary.attendanceTodayTotal > 0
-    ? Math.round((summary.attendanceTodayPresent / summary.attendanceTodayTotal) * 100)
-    : 0
-
   const fmtCurrency = (paise: number) =>
     (paise / 100).toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })
 
@@ -30,14 +26,14 @@ export function StatCards({ summary }: StatCardsProps) {
       icon: 'groups',
     },
     {
-      label: 'Staff Present',
-      value: fmt(summary.attendanceTodayPresent),
-      valueSuffix: `/${fmt(summary.attendanceTodayTotal)}`,
-      badgeText: `${attendanceRate}% Attendance`,
+      label: 'Total Staff',
+      value: fmt(summary.totalStaff),
+      valueSuffix: undefined as string | undefined,
+      badgeText: `${fmt(summary.activeTeachers)} teachers, ${fmt(summary.activeStaff - summary.activeTeachers)} staff`,
       badgeColor: 'text-teal-600 bg-teal-50',
-      badgeIcon: 'check_circle',
+      badgeIcon: 'badge',
       iconBg: 'bg-teal-50 text-teal-600',
-      icon: 'badge',
+      icon: 'supervisor_account',
     },
     {
       label: 'Fees Collected',

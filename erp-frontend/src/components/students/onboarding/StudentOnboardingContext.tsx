@@ -5,12 +5,12 @@ import type { StudentOnboardingConfig } from '../../../lib/queries/students'
 
 export const defaultOnboardingConfig: StudentOnboardingConfig = {
   sections: {
-    personalInfo: { enabled: true, mandatoryFields: ['name', 'className', 'dateOfBirth'] },
-    parentsGuardian: { enabled: true, mandatoryFields: ['fatherName', 'motherName'] },
-    addressInfo: { enabled: true, mandatoryFields: ['currentAddress', 'currentCity'] },
-    transportHostel: { enabled: false, mandatoryFields: [] },
-    medicalHistory: { enabled: false, mandatoryFields: [] },
-    previousSchool: { enabled: false, mandatoryFields: [] },
+    personalInfo: { enabled: true, mandatoryFields: ['name', 'className', 'dateOfBirth'], customFields: [] },
+    parentsGuardian: { enabled: true, mandatoryFields: ['fatherName', 'motherName'], customFields: [] },
+    addressInfo: { enabled: true, mandatoryFields: ['currentAddress', 'currentCity'], customFields: [] },
+    transportHostel: { enabled: false, mandatoryFields: [], customFields: [] },
+    medicalHistory: { enabled: false, mandatoryFields: [], customFields: [] },
+    previousSchool: { enabled: false, mandatoryFields: [], customFields: [] },
     otherDetails: { enabled: false, customFields: [] },
   }
 }
@@ -34,14 +34,19 @@ export function StudentOnboardingProvider({ children }: { children: ReactNode })
       setLoading(true)
       setError(null)
       const data = await getOnboardingConfig()
-      if (data && data.sections) {
+      
+      // Check if config has actual content or is just empty {}
+      const hasContent = data && data.sections && Object.keys(data.sections).length > 0
+      
+      if (hasContent) {
         setConfig(data)
       } else {
         // No config saved yet — use default
+        console.log('No onboarding config found, using defaults')
         setConfig(defaultOnboardingConfig)
       }
     } catch (err: any) {
-      // If the query fails (e.g. no org_settings row yet), 
+      // If the query fails (e.g. no org_settings row yet),
       // fallback to defaults instead of blocking the form
       console.warn('Could not load onboarding config, using defaults:', err.message)
       setConfig(defaultOnboardingConfig)

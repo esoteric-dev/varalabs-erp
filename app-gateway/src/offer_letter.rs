@@ -1,3 +1,8 @@
+// This module is superseded by documents.rs (HTML + Chromium PDF).
+// Kept only so existing external code that may reference it doesn't break.
+// Can be removed once all callers are migrated.
+#![allow(dead_code)]
+
 use axum::{
     extract::{Extension, Path, Query},
     http::{header, StatusCode},

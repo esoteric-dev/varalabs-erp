@@ -7,6 +7,7 @@ import { fetchTodos, createTodo, updateTodo, deleteTodo } from '../lib/queries/d
 import { fetchMyClasses, fetchMyStudents } from '../lib/queries/teacher'
 import { fetchMyStudent } from '../lib/queries/students'
 import { fetchAttendanceRecords } from '../lib/queries/attendance'
+import { fetchOrgBranding } from '../lib/queries/documents'
 import type { OrgRole } from '../lib/queries/user'
 import type { AdminTodo } from '../lib/queries/dashboard'
 
@@ -36,27 +37,57 @@ export const Route = createFileRoute('/_authenticated')({
   component: AuthenticatedLayout,
 })
 
+// Navigation items organized by role
+// Each item has:
+//   - to: route path
+//   - label: display text
+//   - icon: Material Symbols icon name
+//   - permission: permission code (null = no permission check)
+//   - requiresRole: org role slug (null = no role requirement)
+
 const allNavItems = [
+  // ═══════════════════════════════════════════════════════
+  // COMMON (All authenticated users)
+  // ═══════════════════════════════════════════════════════
   { to: '/' as const, label: 'Dashboard', icon: 'dashboard', permission: null, requiresRole: null },
-  { to: '/students' as const, label: 'Students', icon: 'school', permission: 'students.manage', requiresRole: null },
-  { to: '/my-students' as const, label: 'My Students', icon: 'groups', permission: 'students.manage', requiresRole: 'teacher' as string | null },
-  { to: '/attendance' as const, label: 'Attendance', icon: 'calendar_month', permission: 'attendance.view', requiresRole: 'teacher' as string | null },
-  { to: '/assignments' as const, label: 'Assignments', icon: 'menu_book', permission: 'assignments.view', requiresRole: 'teacher' as string | null },
-  { to: '/fees' as const, label: 'Fees & Finance', icon: 'payments', permission: 'fees.view', requiresRole: null },
-  { to: '/admissions' as const, label: 'Admissions', icon: 'person_add', permission: 'admissions.view', requiresRole: null },
+  { to: '/profile' as const, label: 'My Profile', icon: 'person', permission: null, requiresRole: null },
   { to: '/notices' as const, label: 'Notices', icon: 'campaign', permission: 'notices.view', requiresRole: null },
-  { to: '/leave' as const, label: 'Leave', icon: 'event_busy', permission: 'leave.view', requiresRole: null },
-  { to: '/my-payslips' as const, label: 'My Payslips', icon: 'receipt_long', permission: 'payroll.view', requiresRole: null },
-  { to: '/payroll' as const, label: 'Payroll', icon: 'account_balance_wallet', permission: 'payroll.view', requiresRole: null },
+
+  // ═══════════════════════════════════════════════════════
+  // ADMIN FEATURES (admin, tenant_admin, superadmin)
+  // ═══════════════════════════════════════════════════════
+  // Student Management
+  { to: '/students' as const, label: 'Students', icon: 'school', permission: 'students.manage', requiresRole: null },
+  { to: '/students/add-student' as const, label: 'Add Student', icon: 'person_add', permission: 'students.manage', requiresRole: null },
+  { to: '/admissions' as const, label: 'Admissions', icon: 'app_registration', permission: 'admissions.manage', requiresRole: null },
+  
+  // Staff Management
+  { to: '/users' as const, label: 'Staff & Users', icon: 'manage_accounts', permission: 'users.manage', requiresRole: null },
+  { to: '/add-staff' as const, label: 'Add Staff', icon: 'person_add', permission: 'users.manage', requiresRole: null },
+  
+  // Finance
+  { to: '/fees' as const, label: 'Fees & Finance', icon: 'payments', permission: 'fees.view', requiresRole: null },
+  { to: '/payroll' as const, label: 'Payroll', icon: 'account_balance_wallet', permission: 'payroll.manage', requiresRole: null },
+  
+  // Analytics & Configuration
   { to: '/reports' as const, label: 'Reports', icon: 'bar_chart', permission: 'reports.view', requiresRole: null },
-  { to: '/roles' as const, label: 'Roles', icon: 'shield', permission: 'roles.view', requiresRole: null },
-  { to: '/users' as const, label: 'Users', icon: 'manage_accounts', permission: 'users.view', requiresRole: null },
+  { to: '/settings' as const, label: 'Settings', icon: 'settings', permission: 'settings.update', requiresRole: null },
+
+  // ═══════════════════════════════════════════════════════
+  // TEACHER FEATURES (org role: teacher)
+  // ═══════════════════════════════════════════════════════
+  { to: '/my-students' as const, label: 'My Students', icon: 'groups', permission: null, requiresRole: 'teacher' as string | null },
+  { to: '/attendance' as const, label: 'Mark Attendance', icon: 'calendar_month', permission: 'attendance.mark', requiresRole: 'teacher' as string | null },
+  { to: '/assignments' as const, label: 'Assignments', icon: 'menu_book', permission: 'assignments.manage', requiresRole: 'teacher' as string | null },
+  
+  // ═══════════════════════════════════════════════════════
+  // STAFF SELF-SERVICE (teacher, admin if staff)
+  // ═══════════════════════════════════════════════════════
+  { to: '/leave' as const, label: 'My Leave', icon: 'event_busy', permission: 'leave.view', requiresRole: null },
+  { to: '/my-payslips' as const, label: 'My Payslips', icon: 'receipt_long', permission: 'payroll.view', requiresRole: null },
 ]
 
-const systemNavItems = [
-  { to: '/settings' as const, label: 'Configuration', icon: 'settings_suggest', permission: 'settings.update' },
-  { to: '/roles' as const, label: 'Access Control', icon: 'security', permission: 'roles.view' },
-]
+const systemNavItems: typeof allNavItems = []
 
 const topNavItems = [
   { to: '/' as const, label: 'Overview', permission: null, exact: true },
@@ -77,6 +108,13 @@ function AuthenticatedLayout() {
     staleTime: 5 * 60_000,
   })
 
+  const { data: orgBranding } = useQuery({
+    queryKey: ['orgBranding'],
+    queryFn: fetchOrgBranding,
+    staleTime: 10 * 60_000,
+    enabled: !!orgSlug,  // only fetch on org subdomains
+  })
+
   const perms = myPermissions as string[]
   const isSuperUser = currentUser.systemRole === 'superadmin' || currentUser.systemRole === 'tenant_admin'
   const roleSlugs = (myRoles as OrgRole[]).map(r => r.slug)
@@ -84,8 +122,9 @@ function AuthenticatedLayout() {
   // Tenant admin on root domain: minimal sidebar (Dashboard only)
   const isTenantAdminRoot = !orgSlug && currentUser.systemRole === 'tenant_admin'
 
-  const navItems = isTenantAdminRoot
-    ? [{ to: '/' as const, label: 'Dashboard', icon: 'dashboard', permission: null, requiresRole: null }]
+  // Filter nav items by permission and role
+  const filteredNavItems = isTenantAdminRoot
+    ? [{ to: '/' as const, label: 'Dashboard', icon: 'dashboard', permission: null, requiresRole: null, section: 'common' as const }]
     : allNavItems.filter(item => {
         // Permission check
         if (item.permission !== null && !isSuperUser && !perms.includes(item.permission)) return false
@@ -93,6 +132,19 @@ function AuthenticatedLayout() {
         if (item.requiresRole && !roleSlugs.includes(item.requiresRole)) return false
         return true
       })
+
+  // Group navigation items by section (mutually exclusive)
+  // Define explicit route-to-section mapping
+  const commonRoutes = ['/', '/profile', '/notices']
+  const teacherRoutes = ['/my-students', '/attendance', '/assignments']
+  const selfServiceRoutes = ['/leave', '/my-payslips']
+  const adminRoutes = ['/students', '/students/add-student', '/users', '/add-staff', '/fees', '/payroll',
+                       '/admissions', '/reports', '/settings']
+
+  const commonNavItems = filteredNavItems.filter(item => commonRoutes.includes(item.to))
+  const adminNavItems = filteredNavItems.filter(item => adminRoutes.includes(item.to))
+  const teacherNavItems = filteredNavItems.filter(item => teacherRoutes.includes(item.to))
+  const selfServiceNavItems = filteredNavItems.filter(item => selfServiceRoutes.includes(item.to))
 
   const filteredSystemItems = isTenantAdminRoot
     ? []
@@ -179,19 +231,43 @@ function AuthenticatedLayout() {
             )}
           </div>
 
-          {/* User profile */}
+          {/* User profile with overlapping org logo */}
           <Link to="/profile" className="relative group cursor-pointer flex items-center gap-3">
             <div className="hidden md:block text-right">
               <p className="text-sm font-bold text-slate-900 leading-none">{currentUser.name}</p>
               <p className="text-xs text-slate-500 leading-none mt-1 capitalize">{displayRole}</p>
             </div>
-            {currentUser.photoUrl ? (
-              <img src={currentUser.photoUrl} alt={currentUser.name} className="size-10 rounded-full object-cover border-2 border-white shadow-sm" />
-            ) : (
-              <div className="size-10 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-sm">
-                {currentUser.name.split(' ').map((n: string) => n[0]).join('')}
+            {/* Overlapping circles container */}
+            <div className="relative flex items-center">
+              {/* Org logo circle (behind, offset to left) */}
+              {orgBranding?.logoUrl && (
+                <div className="absolute -left-3 z-0">
+                  <div className="w-10 h-10 rounded-full bg-white border-2 border-white shadow-md overflow-hidden flex items-center justify-center">
+                    <img
+                      src={orgBranding.logoUrl}
+                      alt={orgBranding.name}
+                      className="w-full h-full object-cover"
+                      title={orgBranding.name}
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {/* User profile circle (in front) */}
+              <div className={`relative z-10 ${orgBranding?.logoUrl ? 'ml-4' : ''}`}>
+                {currentUser.photoUrl ? (
+                  <img 
+                    src={currentUser.photoUrl} 
+                    alt={currentUser.name} 
+                    className="size-10 rounded-full object-cover border-2 border-white shadow-md ring-2 ring-slate-100/50" 
+                  />
+                ) : (
+                  <div className="size-10 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-md ring-2 ring-slate-100/50">
+                    {currentUser.name.split(' ').map((n: string) => n[0]).join('')}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </Link>
         </div>
       </header>
@@ -208,25 +284,93 @@ function AuthenticatedLayout() {
 
           {/* Navigation Card */}
           <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 flex flex-col gap-1">
-            <div className="px-4 py-2 mb-2">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Main Menu</h3>
-            </div>
-            {navItems.map(({ to, label, icon }) => (
-              <Link
-                key={to}
-                to={to}
-                activeOptions={{ exact: to === '/' }}
-                className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors [&.active]:bg-teal-50 [&.active]:text-teal-700"
-              >
-                <span className={`material-symbols-outlined text-xl [.active_&]:icon-filled`}>{icon}</span>
-                <span className="text-sm font-medium [.active_&]:font-bold">{label}</span>
-              </Link>
-            ))}
+            {/* Common Section */}
+            {commonNavItems.length > 0 && (
+              <>
+                <div className="px-4 py-2">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Main Menu</h3>
+                </div>
+                {commonNavItems.map(({ to, label, icon }) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    activeOptions={{ exact: to === '/' }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors [&.active]:bg-teal-50 [&.active]:text-teal-700"
+                  >
+                    <span className={`material-symbols-outlined text-xl [.active_&]:icon-filled`}>{icon}</span>
+                    <span className="text-sm font-medium [.active_&]:font-bold">{label}</span>
+                  </Link>
+                ))}
+              </>
+            )}
+
+            {/* Admin Section */}
+            {adminNavItems.length > 0 && (
+              <>
+                <div className="h-px bg-slate-100 my-2 mx-4" />
+                <div className="px-4 py-2">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Administration</h3>
+                </div>
+                {adminNavItems.map(({ to, label, icon }) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    activeOptions={{ exact: false }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors [&.active]:bg-teal-50 [&.active]:text-teal-700"
+                  >
+                    <span className={`material-symbols-outlined text-xl [.active_&]:icon-filled`}>{icon}</span>
+                    <span className="text-sm font-medium [.active_&]:font-bold">{label}</span>
+                  </Link>
+                ))}
+              </>
+            )}
+
+            {/* Teacher Section */}
+            {teacherNavItems.length > 0 && (
+              <>
+                <div className="h-px bg-slate-100 my-2 mx-4" />
+                <div className="px-4 py-2">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Teaching</h3>
+                </div>
+                {teacherNavItems.map(({ to, label, icon }) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    activeOptions={{ exact: false }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors [&.active]:bg-teal-50 [&.active]:text-teal-700"
+                  >
+                    <span className={`material-symbols-outlined text-xl [.active_&]:icon-filled`}>{icon}</span>
+                    <span className="text-sm font-medium [.active_&]:font-bold">{label}</span>
+                  </Link>
+                ))}
+              </>
+            )}
+
+            {/* Self-Service Section */}
+            {selfServiceNavItems.length > 0 && (
+              <>
+                <div className="h-px bg-slate-100 my-2 mx-4" />
+                <div className="px-4 py-2">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Self Service</h3>
+                </div>
+                {selfServiceNavItems.map(({ to, label, icon }) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    activeOptions={{ exact: false }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors [&.active]:bg-teal-50 [&.active]:text-teal-700"
+                  >
+                    <span className={`material-symbols-outlined text-xl [.active_&]:icon-filled`}>{icon}</span>
+                    <span className="text-sm font-medium [.active_&]:font-bold">{label}</span>
+                  </Link>
+                ))}
+              </>
+            )}
 
             {filteredSystemItems.length > 0 && (
               <>
                 <div className="h-px bg-slate-100 my-2 mx-4" />
-                <div className="px-4 py-2 mt-2">
+                <div className="px-4 py-2">
                   <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">System</h3>
                 </div>
                 {filteredSystemItems.map(({ to, label, icon }) => (

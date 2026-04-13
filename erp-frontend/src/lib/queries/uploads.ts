@@ -1,9 +1,12 @@
 import { API_BASE } from '../api-base'
 
-export async function uploadStudentPhoto(studentId: string, file: File): Promise<{ photoUrl: string; sizeBytes: number }> {
+export async function uploadStudentPhoto(
+  studentId: string,
+  blob: Blob,
+): Promise<{ photoUrl: string; sizeBytes: number }> {
   const token = localStorage.getItem('authToken')
   const formData = new FormData()
-  formData.append('photo', file)
+  formData.append('photo', blob, 'photo.webp')
 
   const res = await fetch(`${API_BASE}/api/students/${studentId}/photo`, {
     method: 'POST',
@@ -19,10 +22,13 @@ export async function uploadStudentPhoto(studentId: string, file: File): Promise
   return res.json()
 }
 
-export async function uploadUserPhoto(userId: string, file: File): Promise<{ photoUrl: string; sizeBytes: number }> {
+export async function uploadUserPhoto(
+  userId: string,
+  blob: Blob,
+): Promise<{ photoUrl: string; sizeBytes: number }> {
   const token = localStorage.getItem('authToken')
   const formData = new FormData()
-  formData.append('photo', file)
+  formData.append('photo', blob, 'photo.webp')
 
   const res = await fetch(`${API_BASE}/api/users/${userId}/photo`, {
     method: 'POST',

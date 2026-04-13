@@ -149,6 +149,10 @@ pub struct Organisation {
     pub name: String,
     pub slug: String,
     pub created_at: String,
+    pub logo_url: Option<String>,
+    pub address: Option<String>,
+    pub phone: Option<String>,
+    pub website: Option<String>,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow, Clone)]
@@ -318,6 +322,7 @@ pub struct PayrollRun {
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
 pub struct PayrollEntry {
     pub id: String,
+    pub user_id: String,
     pub user_name: String,
     pub basic_pay: i64,
     pub allowances: i64,
@@ -370,14 +375,28 @@ pub struct OrgUser {
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
-pub struct OfferLetterTemplate {
-    pub id: String,
+pub struct DocumentType {
+    pub code:          String,
+    pub name:          String,
+    pub description:   String,
+    pub available_vars: Vec<String>,
+    pub page_size:     String,
+    pub orientation:   String,
+    pub sort_order:    i32,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct DocumentTemplate {
+    pub id:              String,
     pub organisation_id: String,
-    pub name: String,
-    pub content: String,
-    pub is_default: bool,
-    pub created_at: String,
-    pub updated_at: String,
+    pub tenant_id:       String,
+    pub document_type:   String,
+    pub name:            String,
+    pub description:     String,
+    pub html_content:    String,
+    pub is_default:      bool,
+    pub created_at:      String,
+    pub updated_at:      String,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
@@ -408,7 +427,62 @@ pub struct ReportSummary {
     pub total_expenses: i64,
 }
 
-// ── Dashboard Feature Types ─────────────────────────────────────────────────
+// ── Audit Log Type ──────────────────────────────────────────────────────────
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct AuditLog {
+    pub id: String,
+    pub action: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub entity_name: String,
+    pub details: String,
+    pub performed_by: String,
+    pub performed_by_name: String,
+    pub ip_address: Option<String>,
+    pub is_sensitive: bool,
+    pub created_at: String,
+}
+
+/// Utility function to insert an audit log entry
+pub async fn log_audit(
+    pool: &PgPool,
+    tenant_id: &str,
+    org_id: &str,
+    action: &str,
+    entity_type: &str,
+    entity_id: &str,
+    entity_name: &str,
+    details: &str,
+    performed_by: &str,
+    is_sensitive: bool,
+) {
+    let inner_tenant = tenant_id.to_string();
+    let inner_org = org_id.to_string();
+    let inner_action = action.to_string();
+    let inner_entity_type = entity_type.to_string();
+    let inner_entity_id = entity_id.to_string();
+    let inner_entity_name = entity_name.to_string();
+    let inner_details = details.to_string();
+    let inner_performed_by = performed_by.to_string();
+
+    let _ = sqlx::query(
+        "INSERT INTO audit_logs (tenant_id, organisation_id, action, entity_type, entity_id, entity_name, details, performed_by, is_sensitive)
+         VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid, $6, $7, $8::uuid, $9)",
+    )
+    .bind(&inner_tenant)
+    .bind(&inner_org)
+    .bind(&inner_action)
+    .bind(&inner_entity_type)
+    .bind(&inner_entity_id)
+    .bind(&inner_entity_name)
+    .bind(&inner_details)
+    .bind(&inner_performed_by)
+    .bind(is_sensitive)
+    .execute(pool)
+    .await;
+    // Silently ignore errors — audit logging should not break the main operation
+}
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
 pub struct Event {
@@ -708,6 +782,10 @@ pub struct OrgInfo {
     pub org_name: String,
     pub org_slug: String,
     pub tenant_name: String,
+    pub logo_url: Option<String>,
+    pub address: Option<String>,
+    pub phone: Option<String>,
+    pub website: Option<String>,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow)]
@@ -1138,7 +1216,8 @@ impl QueryRoot {
         let rows = match effective_tenant {
             Some(tid) => {
                 sqlx::query_as::<_, Organisation>(
-                    "SELECT id::text, tenant_id::text, name, slug, created_at::text
+                    "SELECT id::text, tenant_id::text, name, slug, created_at::text,
+                            logo_url, address, phone, website
                      FROM organisations
                      WHERE tenant_id = $1::uuid
                      ORDER BY created_at",
@@ -1149,7 +1228,8 @@ impl QueryRoot {
             }
             None => {
                 sqlx::query_as::<_, Organisation>(
-                    "SELECT id::text, tenant_id::text, name, slug, created_at::text
+                    "SELECT id::text, tenant_id::text, name, slug, created_at::text,
+                            logo_url, address, phone, website
                      FROM organisations
                      ORDER BY created_at",
                 )
@@ -1639,7 +1719,7 @@ impl QueryRoot {
             .map_err(|_| async_graphql::Error::new("Invalid payroll run id"))?;
 
         let rows = sqlx::query_as::<_, PayrollEntry>(
-            "SELECT pe.id::text, u.name AS user_name, pe.basic_pay,
+            "SELECT pe.id::text, pe.user_id::text, u.name AS user_name, pe.basic_pay,
                     pe.allowances, pe.deductions, pe.net_pay
              FROM payroll_entries pe
              JOIN users u ON u.id = pe.user_id
@@ -1722,21 +1802,62 @@ impl QueryRoot {
         Ok(user)
     }
 
-    /// List offer letter templates for the current org.
-    async fn offer_letter_templates(&self, ctx: &Context<'_>) -> Result<Vec<OfferLetterTemplate>> {
+    /// Fetch branding info (logo, address, phone, website) for the current org.
+    async fn org_branding(&self, ctx: &Context<'_>) -> Result<Organisation> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let org_id = uuid::Uuid::parse_str(&user_ctx.org_id)
+            .map_err(|_| async_graphql::Error::new("Invalid org id"))?;
+        let org = sqlx::query_as::<_, Organisation>(
+            "SELECT id::text, tenant_id::text, name, slug, created_at::text,
+                    logo_url, address, phone, website
+               FROM organisations WHERE id = $1",
+        )
+        .bind(org_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        Ok(org)
+    }
+
+    /// List all platform-defined document types with their available variables.
+    async fn document_types(&self, ctx: &Context<'_>) -> Result<Vec<DocumentType>> {
+        let _user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+        let rows = sqlx::query_as::<_, DocumentType>(
+            "SELECT code, name, description, available_vars, page_size, orientation, sort_order
+               FROM document_types ORDER BY sort_order",
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        Ok(rows)
+    }
+
+    /// List document templates for the current org.
+    /// Optionally filter by document_type code (e.g. "offer_letter").
+    async fn document_templates(
+        &self,
+        ctx: &Context<'_>,
+        document_type: Option<String>,
+    ) -> Result<Vec<DocumentTemplate>> {
         let user_ctx = require_permission(ctx, "users.view")?;
         let pool = ctx.data::<PgPool>()?;
         let tenant_id = user_ctx.tenant_id.clone();
-        let org_id = user_ctx.org_id.clone();
+        let org_id    = user_ctx.org_id.clone();
 
         let templates = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let dt = document_type.clone();
             Box::pin(async move {
-                let rows = sqlx::query_as::<_, OfferLetterTemplate>(
-                    "SELECT id::text, organisation_id::text, name, content, is_default,
+                let rows = sqlx::query_as::<_, DocumentTemplate>(
+                    "SELECT id::text, organisation_id::text, tenant_id::text,
+                            document_type, name, description, html_content, is_default,
                             created_at::text, updated_at::text
-                     FROM offer_letter_templates
-                     ORDER BY is_default DESC, updated_at DESC",
+                       FROM document_templates
+                      WHERE ($1::text IS NULL OR document_type = $1)
+                      ORDER BY is_default DESC, updated_at DESC",
                 )
+                .bind(dt.as_deref())
                 .fetch_all(conn)
                 .await?;
                 Ok(rows)
@@ -1748,20 +1869,17 @@ impl QueryRoot {
         Ok(templates)
     }
 
-    /// Get the built-in default offer letter template content.
-    async fn default_offer_letter_content(&self, ctx: &Context<'_>) -> Result<String> {
-        let _user_ctx = require_permission(ctx, "users.view")?;
-        Ok(crate::offer_letter::default_template_content())
-    }
-
-    /// Get the default offer letter terms (plain text items for the structured editor).
-    async fn default_offer_letter_terms(
+    /// Return the platform's built-in HTML for a given document type.
+    /// Use this as the starting point when creating a custom template.
+    async fn platform_template_html(
         &self,
         ctx: &Context<'_>,
-        #[graphql(default = "offer")] letter_type: String,
-    ) -> Result<Vec<String>> {
-        let _user_ctx = require_permission(ctx, "users.view")?;
-        Ok(crate::offer_letter::get_default_terms(&letter_type))
+        document_type: String,
+    ) -> Result<String> {
+        let _user_ctx = require_auth(ctx)?;
+        crate::documents::platform_template(&document_type)
+            .map(|s| s.to_string())
+            .ok_or_else(|| async_graphql::Error::new(format!("Unknown document type: {document_type}")))
     }
 
     // ── Reports ─────────────────────────────────────────────────────────────
@@ -2129,7 +2247,8 @@ impl QueryRoot {
         if let Some(ref s) = slug {
             let info = sqlx::query_as::<_, OrgInfo>(
                 "SELECT o.id::text AS org_id, o.name AS org_name, o.slug AS org_slug,
-                        t.name AS tenant_name
+                        t.name AS tenant_name,
+                        o.logo_url, o.address, o.phone, o.website
                  FROM organisations o
                  JOIN tenants t ON t.id = o.tenant_id
                  WHERE o.slug = $1",
@@ -2147,7 +2266,8 @@ impl QueryRoot {
         if let Some(ref h) = host {
             let info = sqlx::query_as::<_, OrgInfo>(
                 "SELECT o.id::text AS org_id, o.name AS org_name, o.slug AS org_slug,
-                        t.name AS tenant_name
+                        t.name AS tenant_name,
+                        o.logo_url, o.address, o.phone, o.website
                  FROM org_custom_domains cd
                  JOIN organisations o ON o.id = cd.organisation_id
                  JOIN tenants t ON t.id = o.tenant_id
@@ -2390,6 +2510,41 @@ impl QueryRoot {
         })
         .await
         .map_err(|e| e.extend())?;
+        Ok(rows)
+    }
+
+    /// Get audit logs for the current organisation (admin only)
+    async fn audit_logs(&self, ctx: &Context<'_>, limit: Option<i32>) -> Result<Vec<AuditLog>> {
+        let user_ctx = require_permission(ctx, "users.view")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id = user_ctx.org_id.clone();
+        let inner_limit = limit.unwrap_or(50);
+
+        let rows = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            Box::pin(async move {
+                let rows = sqlx::query_as::<_, AuditLog>(
+                    "SELECT a.id::text, a.action, a.entity_type, a.entity_id::text, a.entity_name,
+                            a.details, a.performed_by::text,
+                            COALESCE(u.name, 'Unknown') as performed_by_name,
+                            a.ip_address::text, a.is_sensitive, a.created_at::text
+                     FROM audit_logs a
+                     LEFT JOIN users u ON a.performed_by = u.id
+                     WHERE a.organisation_id = current_setting('app.current_org')::uuid
+                     ORDER BY a.created_at DESC
+                     LIMIT $1",
+                )
+                .bind(inner_limit)
+                .fetch_all(conn)
+                .await?;
+                Ok(rows)
+            })
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching audit logs: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
         Ok(rows)
     }
 
@@ -3802,7 +3957,8 @@ impl MutationRoot {
         let org = sqlx::query_as::<_, Organisation>(
             "INSERT INTO organisations (tenant_id, name, slug)
              VALUES ($1, $2, $3)
-             RETURNING id::text, tenant_id::text, name, slug, created_at::text",
+             RETURNING id::text, tenant_id::text, name, slug, created_at::text,
+                       logo_url, address, phone, website",
         )
         .bind(tenant_uuid)
         .bind(&name)
@@ -6224,6 +6380,20 @@ impl MutationRoot {
             async_graphql::Error::new("Internal server error")
         })?;
 
+        // Audit log: student created
+        log_audit(
+            &pool,
+            &user_ctx.tenant_id,
+            &user_ctx.org_id,
+            "student.created",
+            "student",
+            &student.id,
+            &input.name,
+            &format!("Admitted to class {}", input.class_name),
+            &user_ctx.user_id,
+            false,
+        ).await;
+
         tx.commit().await.map_err(|e| {
             tracing::error!("DB transaction commit error: {e}");
             async_graphql::Error::new("Internal server error")
@@ -6898,131 +7068,187 @@ impl MutationRoot {
         Ok(true)
     }
 
-    // ── Offer Letter Template CRUD ──────────────────────────────────────────
+    // ── Organisation Branding ───────────────────────────────────────────────
 
-    /// Create a new offer letter template for the current org.
-    async fn create_offer_letter_template(
+    /// Update branding fields (logo, address, phone, website) for the current org.
+    /// Requires settings.update permission.
+    async fn update_org_branding(
         &self,
         ctx: &Context<'_>,
+        logo_url: Option<String>,
+        address: Option<String>,
+        phone: Option<String>,
+        website: Option<String>,
+    ) -> Result<Organisation> {
+        let user_ctx = require_permission(ctx, "settings.update")?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let org_id = uuid::Uuid::parse_str(&user_ctx.org_id)
+            .map_err(|_| async_graphql::Error::new("Invalid org id"))?;
+
+        let org = sqlx::query_as::<_, Organisation>(
+            "UPDATE organisations
+                SET logo_url = COALESCE($2, logo_url),
+                    address  = COALESCE($3, address),
+                    phone    = COALESCE($4, phone),
+                    website  = COALESCE($5, website)
+              WHERE id = $1
+              RETURNING id::text, tenant_id::text, name, slug, created_at::text,
+                        logo_url, address, phone, website",
+        )
+        .bind(org_id)
+        .bind(logo_url)
+        .bind(address)
+        .bind(phone)
+        .bind(website)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error updating org branding: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        Ok(org)
+    }
+
+    // ── Document Template CRUD ─────────────────────────────────────────────
+
+    /// Create a new HTML document template for the current org.
+    /// Start from the platform default by first calling platformTemplateHtml.
+    async fn create_document_template(
+        &self,
+        ctx: &Context<'_>,
+        document_type: String,
         name: String,
-        content: String,
+        html_content: String,
+        description: Option<String>,
         is_default: Option<bool>,
-    ) -> Result<OfferLetterTemplate> {
+    ) -> Result<DocumentTemplate> {
         let user_ctx = require_permission(ctx, "users.manage")?;
         let pool = ctx.data::<PgPool>()?;
         let tenant_id = user_ctx.tenant_id.clone();
-        let org_id = user_ctx.org_id.clone();
-        let is_def = is_default.unwrap_or(false);
+        let org_id    = user_ctx.org_id.clone();
+        let is_def    = is_default.unwrap_or(false);
 
-        let template = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+        let tmpl = execute_in_context(pool, &tenant_id, &org_id, |conn| {
             let t_id = tenant_id.clone();
             let o_id = org_id.clone();
-            let n = name.clone();
-            let c = content.clone();
+            let dt   = document_type.clone();
+            let n    = name.clone();
+            let h    = html_content.clone();
+            let desc = description.clone().unwrap_or_default();
             Box::pin(async move {
-                // If setting as default, unset any existing default first
                 if is_def {
-                    sqlx::query("UPDATE offer_letter_templates SET is_default = false WHERE organisation_id = $1::uuid AND is_default = true")
-                        .bind(&o_id)
-                        .execute(&mut *conn)
-                        .await?;
+                    sqlx::query(
+                        "UPDATE document_templates SET is_default = false
+                          WHERE organisation_id = $1::uuid AND document_type = $2 AND is_default = true",
+                    )
+                    .bind(&o_id).bind(&dt)
+                    .execute(&mut *conn).await?;
                 }
-                let row = sqlx::query_as::<_, OfferLetterTemplate>(
-                    "INSERT INTO offer_letter_templates (organisation_id, tenant_id, name, content, is_default)
-                     VALUES ($1::uuid, $2::uuid, $3, $4, $5)
-                     RETURNING id::text, organisation_id::text, name, content, is_default, created_at::text, updated_at::text",
+                let row = sqlx::query_as::<_, DocumentTemplate>(
+                    "INSERT INTO document_templates
+                         (organisation_id, tenant_id, document_type, name, description, html_content, is_default)
+                     VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
+                     RETURNING id::text, organisation_id::text, tenant_id::text,
+                               document_type, name, description, html_content, is_default,
+                               created_at::text, updated_at::text",
                 )
-                .bind(&o_id)
-                .bind(&t_id)
-                .bind(&n)
-                .bind(&c)
-                .bind(is_def)
-                .fetch_one(conn)
-                .await?;
+                .bind(&o_id).bind(&t_id).bind(&dt).bind(&n).bind(&desc).bind(&h).bind(is_def)
+                .fetch_one(conn).await?;
                 Ok(row)
             })
         })
         .await
         .map_err(|e| e.extend())?;
 
-        Ok(template)
+        Ok(tmpl)
     }
 
-    /// Update an existing offer letter template.
-    async fn update_offer_letter_template(
+    /// Update name, description, html_content, or is_default of an existing template.
+    async fn update_document_template(
         &self,
         ctx: &Context<'_>,
         id: String,
         name: Option<String>,
-        content: Option<String>,
+        html_content: Option<String>,
+        description: Option<String>,
         is_default: Option<bool>,
-    ) -> Result<OfferLetterTemplate> {
+    ) -> Result<DocumentTemplate> {
         let user_ctx = require_permission(ctx, "users.manage")?;
         let pool = ctx.data::<PgPool>()?;
         let tenant_id = user_ctx.tenant_id.clone();
-        let org_id = user_ctx.org_id.clone();
+        let org_id    = user_ctx.org_id.clone();
 
-        let template = execute_in_context(pool, &tenant_id, &org_id, |conn| {
-            let template_id = id.clone();
+        let tmpl = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let tid = id.clone();
             let o_id = org_id.clone();
             let n = name.clone();
-            let c = content.clone();
+            let h = html_content.clone();
+            let d = description.clone();
             Box::pin(async move {
-                // If setting as default, unset any existing default first
                 if is_default == Some(true) {
-                    sqlx::query("UPDATE offer_letter_templates SET is_default = false WHERE organisation_id = $1::uuid AND is_default = true AND id != $2::uuid")
-                        .bind(&o_id)
-                        .bind(&template_id)
-                        .execute(&mut *conn)
-                        .await?;
+                    // First find the doc_type of this template
+                    let dt: Option<(String,)> = sqlx::query_as(
+                        "SELECT document_type FROM document_templates WHERE id = $1::uuid"
+                    )
+                    .bind(&tid)
+                    .fetch_optional(&mut *conn).await?;
+
+                    if let Some((doc_type,)) = dt {
+                        sqlx::query(
+                            "UPDATE document_templates SET is_default = false
+                              WHERE organisation_id = $1::uuid AND document_type = $2
+                                AND id != $3::uuid AND is_default = true",
+                        )
+                        .bind(&o_id).bind(&doc_type).bind(&tid)
+                        .execute(&mut *conn).await?;
+                    }
                 }
 
                 let mut sets: Vec<String> = Vec::new();
-                let mut param_idx = 1u32; // $1 = template_id
-                if n.is_some() { param_idx += 1; sets.push(format!("name = ${param_idx}")); }
-                if c.is_some() { param_idx += 1; sets.push(format!("content = ${param_idx}")); }
-                if is_default.is_some() { param_idx += 1; sets.push(format!("is_default = ${param_idx}")); }
+                let mut idx = 1u32; // $1 = id
+                if n.is_some()  { idx += 1; sets.push(format!("name = ${idx}")); }
+                if h.is_some()  { idx += 1; sets.push(format!("html_content = ${idx}")); }
+                if d.is_some()  { idx += 1; sets.push(format!("description = ${idx}")); }
+                if is_default.is_some() { idx += 1; sets.push(format!("is_default = ${idx}")); }
                 sets.push("updated_at = now()".to_string());
 
                 let sql = format!(
-                    "UPDATE offer_letter_templates SET {} WHERE id = $1::uuid
-                     RETURNING id::text, organisation_id::text, name, content, is_default, created_at::text, updated_at::text",
+                    "UPDATE document_templates SET {} WHERE id = $1::uuid
+                     RETURNING id::text, organisation_id::text, tenant_id::text,
+                               document_type, name, description, html_content, is_default,
+                               created_at::text, updated_at::text",
                     sets.join(", ")
                 );
 
-                let mut query = sqlx::query_as::<_, OfferLetterTemplate>(&sql).bind(&template_id);
-                if let Some(ref n_val) = n { query = query.bind(n_val.as_str()); }
-                if let Some(ref c_val) = c { query = query.bind(c_val.as_str()); }
-                if let Some(is_def) = is_default { query = query.bind(is_def); }
+                let mut q = sqlx::query_as::<_, DocumentTemplate>(&sql).bind(&tid);
+                if let Some(ref v) = n { q = q.bind(v.as_str()); }
+                if let Some(ref v) = h { q = q.bind(v.as_str()); }
+                if let Some(ref v) = d { q = q.bind(v.as_str()); }
+                if let Some(v) = is_default { q = q.bind(v); }
 
-                let row = query.fetch_one(conn).await?;
-                Ok(row)
+                Ok(q.fetch_one(conn).await?)
             })
         })
         .await
         .map_err(|e| e.extend())?;
 
-        Ok(template)
+        Ok(tmpl)
     }
 
-    /// Delete an offer letter template.
-    async fn delete_offer_letter_template(
-        &self,
-        ctx: &Context<'_>,
-        id: String,
-    ) -> Result<bool> {
+    /// Delete a document template. Will fail if it's the only default for its type.
+    async fn delete_document_template(&self, ctx: &Context<'_>, id: String) -> Result<bool> {
         let user_ctx = require_permission(ctx, "users.manage")?;
         let pool = ctx.data::<PgPool>()?;
         let tenant_id = user_ctx.tenant_id.clone();
-        let org_id = user_ctx.org_id.clone();
+        let org_id    = user_ctx.org_id.clone();
 
         execute_in_context(pool, &tenant_id, &org_id, |conn| {
-            let template_id = id.clone();
+            let tid = id.clone();
             Box::pin(async move {
-                sqlx::query("DELETE FROM offer_letter_templates WHERE id = $1::uuid")
-                    .bind(&template_id)
-                    .execute(conn)
-                    .await?;
+                sqlx::query("DELETE FROM document_templates WHERE id = $1::uuid")
+                    .bind(&tid).execute(conn).await?;
                 Ok(())
             })
         })
@@ -7030,6 +7256,48 @@ impl MutationRoot {
         .map_err(|e| e.extend())?;
 
         Ok(true)
+    }
+
+    /// Set a template as the default for its document type in the current org.
+    async fn set_default_document_template(&self, ctx: &Context<'_>, id: String) -> Result<DocumentTemplate> {
+        let user_ctx = require_permission(ctx, "users.manage")?;
+        let pool = ctx.data::<PgPool>()?;
+        let tenant_id = user_ctx.tenant_id.clone();
+        let org_id    = user_ctx.org_id.clone();
+
+        let tmpl = execute_in_context(pool, &tenant_id, &org_id, |conn| {
+            let tid  = id.clone();
+            let o_id = org_id.clone();
+            Box::pin(async move {
+                let dt: Option<(String,)> = sqlx::query_as(
+                    "SELECT document_type FROM document_templates WHERE id = $1::uuid"
+                )
+                .bind(&tid).fetch_optional(&mut *conn).await?;
+
+                let (doc_type,) = dt.ok_or_else(|| sqlx::Error::RowNotFound)?;
+
+                sqlx::query(
+                    "UPDATE document_templates SET is_default = false
+                      WHERE organisation_id = $1::uuid AND document_type = $2 AND is_default = true",
+                )
+                .bind(&o_id).bind(&doc_type)
+                .execute(&mut *conn).await?;
+
+                let row = sqlx::query_as::<_, DocumentTemplate>(
+                    "UPDATE document_templates SET is_default = true, updated_at = now()
+                      WHERE id = $1::uuid
+                     RETURNING id::text, organisation_id::text, tenant_id::text,
+                               document_type, name, description, html_content, is_default,
+                               created_at::text, updated_at::text",
+                )
+                .bind(&tid).fetch_one(conn).await?;
+                Ok(row)
+            })
+        })
+        .await
+        .map_err(|e| e.extend())?;
+
+        Ok(tmpl)
     }
 }
 

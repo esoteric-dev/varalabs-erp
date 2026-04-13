@@ -7,6 +7,7 @@ import { fetchMyStudent } from '../../lib/queries/students'
 import { fetchMyClasses } from '../../lib/queries/teacher'
 import type { Student } from '../../lib/queries/students'
 import type { TeacherClass } from '../../lib/queries/teacher'
+import { PhotoCropModal } from '../../components/ui/PhotoCropModal'
 
 export const Route = createFileRoute('/_authenticated/profile')({
   component: ProfilePage,
@@ -37,6 +38,7 @@ function ProfilePage() {
   const [editName, setEditName] = useState(currentUser.name)
   const [editPhone, setEditPhone] = useState(currentUser.phone || '')
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [cropFile, setCropFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const profileUpdateMutation = useMutation({
@@ -49,7 +51,7 @@ function ProfilePage() {
   })
 
   const photoUploadMutation = useMutation({
-    mutationFn: (file: File) => uploadMyPhoto(file),
+    mutationFn: (blob: Blob) => uploadMyPhoto(blob),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['currentUser'] })
       setUploadError(null)
@@ -63,8 +65,9 @@ function ProfilePage() {
     const file = e.target.files?.[0]
     if (file) {
       setUploadError(null)
-      photoUploadMutation.mutate(file)
+      setCropFile(file)
     }
+    e.target.value = ''
   }
 
   // Fetch student data if user has student role
@@ -154,26 +157,22 @@ function ProfilePage() {
                 </div>
               )}
               <div className="absolute bottom-1 right-1 size-5 rounded-full bg-green-500 border-3 border-white" />
-              {(isTeacher || isAdmin) && (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handlePhotoSelect}
-                  />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={photoUploadMutation.isPending}
-                    className="absolute inset-0 rounded-full bg-black/0 hover:bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-white text-2xl drop-shadow">
-                      {photoUploadMutation.isPending ? 'hourglass_empty' : 'photo_camera'}
-                    </span>
-                  </button>
-                </>
-              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoSelect}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={photoUploadMutation.isPending}
+                className="absolute inset-0 rounded-full bg-black/0 hover:bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-white text-2xl drop-shadow">
+                  {photoUploadMutation.isPending ? 'hourglass_empty' : 'photo_camera'}
+                </span>
+              </button>
             </div>
 
             {/* Name & Quick Info */}
@@ -320,6 +319,15 @@ function ProfilePage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Photo crop modal */}
+      {cropFile && (
+        <PhotoCropModal
+          file={cropFile}
+          onSave={blob => { setCropFile(null); photoUploadMutation.mutate(blob) }}
+          onCancel={() => setCropFile(null)}
+        />
       )}
 
       {/* Content Grid */}

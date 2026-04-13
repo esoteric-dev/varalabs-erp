@@ -6,7 +6,7 @@ import { fetchReportSummary } from '../../lib/queries/reports'
 import { StatCards } from './admin/StatCards'
 import { TodayOverview } from './admin/TodayOverview'
 import { AttendanceChart } from './admin/AttendanceChart'
-import { RecentActivity } from './admin/RecentActivity'
+import { AuditLog } from './admin/AuditLog'
 import { SystemStatus } from './admin/SystemStatus'
 import { UpcomingEvents } from './admin/UpcomingEvents'
 import { QuickActions } from './admin/QuickActions'
@@ -42,8 +42,8 @@ export function AdminDashboard({ tenantId: _tenantId }: AdminDashboardProps) {
           {/* Attendance Chart */}
           <AttendanceChart />
 
-          {/* Recent Activity */}
-          <RecentActivity />
+          {/* Audit Log */}
+          <AuditLog />
         </div>
 
         {/* Right Column: 1/3 width */}

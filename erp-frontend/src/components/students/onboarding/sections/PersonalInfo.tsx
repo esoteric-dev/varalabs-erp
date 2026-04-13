@@ -8,7 +8,7 @@ import { fetchClasses, addClass } from '../../../../lib/queries/dashboard'
 interface Props {
   data: Partial<AddStudentInput>
   updateData: (data: Partial<AddStudentInput>) => void
-  config: { enabled: boolean; mandatoryFields: string[] }
+  config: { enabled: boolean; mandatoryFields: string[]; customFields?: Array<{ id: string; label: string; type: string; required: boolean; placeholder?: string; helpText?: string; options?: string[] }> }
 }
 
 export default function PersonalInfo({ data, updateData, config }: Props) {
@@ -230,6 +230,118 @@ export default function PersonalInfo({ data, updateData, config }: Props) {
             className={inputCls}
           />
         </div>
+
+        {/* Custom Fields for this section */}
+        {config.customFields && config.customFields.length > 0 && (
+          <>
+            <div className="col-span-full border-t border-gray-200 pt-4 mt-4">
+              <h4 className="text-sm font-semibold text-gray-700 mb-3">Additional Information</h4>
+            </div>
+            {config.customFields.map((field) => {
+              const customData = data.customData || {}
+              const handleCustomChange = (value: any) => {
+                updateData({
+                  customData: {
+                    ...customData,
+                    [field.id]: value
+                  }
+                })
+              }
+
+              return (
+                <div key={field.id}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {field.label} {field.required && <span className="text-red-500">*</span>}
+                  </label>
+                  {field.placeholder && <p className="text-xs text-gray-500 mb-1">{field.placeholder}</p>}
+                  
+                  {field.type === 'text' && (
+                    <input
+                      type="text"
+                      required={field.required}
+                      value={customData[field.id] || ''}
+                      onChange={(e) => handleCustomChange(e.target.value)}
+                      className={inputCls}
+                      placeholder={field.placeholder}
+                    />
+                  )}
+                  {field.type === 'number' && (
+                    <input
+                      type="number"
+                      required={field.required}
+                      value={customData[field.id] || ''}
+                      onChange={(e) => handleCustomChange(parseFloat(e.target.value) || 0)}
+                      className={inputCls}
+                    />
+                  )}
+                  {field.type === 'email' && (
+                    <input
+                      type="email"
+                      required={field.required}
+                      value={customData[field.id] || ''}
+                      onChange={(e) => handleCustomChange(e.target.value)}
+                      className={inputCls}
+                    />
+                  )}
+                  {field.type === 'phone' && (
+                    <input
+                      type="tel"
+                      required={field.required}
+                      value={customData[field.id] || ''}
+                      onChange={(e) => handleCustomChange(e.target.value)}
+                      className={inputCls}
+                    />
+                  )}
+                  {field.type === 'date' && (
+                    <input
+                      type="date"
+                      required={field.required}
+                      value={customData[field.id] || ''}
+                      onChange={(e) => handleCustomChange(e.target.value)}
+                      className={inputCls}
+                    />
+                  )}
+                  {field.type === 'textarea' && (
+                    <textarea
+                      required={field.required}
+                      value={customData[field.id] || ''}
+                      onChange={(e) => handleCustomChange(e.target.value)}
+                      rows={3}
+                      className={inputCls + ' resize-none'}
+                      placeholder={field.placeholder}
+                    />
+                  )}
+                  {field.type === 'select' && (
+                    <select
+                      required={field.required}
+                      value={customData[field.id] || ''}
+                      onChange={(e) => handleCustomChange(e.target.value)}
+                      className={inputCls}
+                    >
+                      <option value="">Select an option</option>
+                      {field.options?.map((option, idx) => (
+                        <option key={idx} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  )}
+                  {field.type === 'checkbox' && (
+                    <div className="flex items-center h-10">
+                      <input
+                        type="checkbox"
+                        required={field.required}
+                        checked={customData[field.id] || false}
+                        onChange={(e) => handleCustomChange(e.target.checked)}
+                        className="h-4 w-4 text-teal-600 focus:ring-teal-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Yes</span>
+                    </div>
+                  )}
+                  {field.helpText && <p className="text-xs text-gray-500 mt-1">{field.helpText}</p>}
+                </div>
+              )
+            })}
+          </>
+        )}
 
       </div>
     </div>

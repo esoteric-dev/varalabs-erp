@@ -35,6 +35,20 @@ export interface AdminTodo {
   status: string
 }
 
+export interface AuditLog {
+  id: string
+  action: string
+  entityType: string
+  entityId: string
+  entityName: string
+  details: string
+  performedBy: string
+  performedByName: string
+  ipAddress: string | null
+  isSensitive: boolean
+  createdAt: string
+}
+
 export interface Notice {
   id: string
   title: string
@@ -107,6 +121,24 @@ const ADD_CLASS = gql`
   mutation AddClass($className: String!) { addClass(className: $className) }
 `
 
+const AUDIT_LOGS_QUERY = gql`
+  query AuditLogs($limit: Int) {
+    auditLogs(limit: $limit) {
+      id
+      action
+      entityType
+      entityId
+      entityName
+      details
+      performedBy
+      performedByName
+      ipAddress
+      isSensitive
+      createdAt
+    }
+  }
+`
+
 // ── Fetch Functions ──────────────────────────────────────────────────────────
 
 export const fetchEvents = async (): Promise<Event[]> => {
@@ -167,4 +199,9 @@ export const deleteTodo = async (id: string): Promise<boolean> => {
 export const addClass = async (className: string): Promise<boolean> => {
   const d = await gqlClient.request<{ addClass: boolean }>(ADD_CLASS, { className })
   return d.addClass
+}
+
+export const fetchAuditLogs = async (limit?: number): Promise<AuditLog[]> => {
+  const d = await gqlClient.request<{ auditLogs: AuditLog[] }>(AUDIT_LOGS_QUERY, { limit: limit || 50 })
+  return d.auditLogs
 }

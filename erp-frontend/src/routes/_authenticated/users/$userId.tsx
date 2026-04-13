@@ -3,10 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
 import { fetchOrgUser, fetchStaffDetail, updateUser, updateStaffDetails } from '../../../lib/queries/org-users'
 import { uploadUserPhoto } from '../../../lib/queries/uploads'
-import {
-  fetchDefaultOfferLetterTerms,
-  generateOfferLetter,
-} from '../../../lib/offer-letter'
+import { generateDocument } from '../../../lib/queries/documents'
+import { PhotoCropModal } from '../../../components/ui/PhotoCropModal'
 import type { OrgUser, StaffDetail } from '../../../lib/queries/org-users'
 
 export const Route = createFileRoute('/_authenticated/users/$userId')({
@@ -27,6 +25,7 @@ function UserDetailPage() {
   const [isEditingBasic, setIsEditingBasic] = useState(false)
   const [isEditingStaff, setIsEditingStaff] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [cropFile, setCropFile] = useState<File | null>(null)
   const [showOfferModal, setShowOfferModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -51,7 +50,7 @@ function UserDetailPage() {
 
   // ── Mutations ───────────────────────────────────────────────────────
   const photoUploadMutation = useMutation({
-    mutationFn: (file: File) => uploadUserPhoto(userId, file),
+    mutationFn: (blob: Blob) => uploadUserPhoto(userId, blob),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orgUser', userId] })
       queryClient.invalidateQueries({ queryKey: ['orgUsers'] })
@@ -90,7 +89,8 @@ function UserDetailPage() {
       return
     }
     setUploadError(null)
-    photoUploadMutation.mutate(file)
+    setCropFile(file)
+    e.target.value = ''
   }
 
   const startEditBasic = () => {
@@ -283,8 +283,8 @@ function UserDetailPage() {
                 onClick={() => setShowOfferModal(true)}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors"
               >
-                <span className="material-symbols-outlined text-lg">description</span>
-                Generate Offer Letter
+                <span className="material-symbols-outlined text-lg">picture_as_pdf</span>
+                Generate Document
               </button>
             </div>
           </div>
@@ -535,6 +535,15 @@ function UserDetailPage() {
           onClose={() => setShowOfferModal(false)}
         />
       )}
+
+      {/* Photo crop modal */}
+      {cropFile && (
+        <PhotoCropModal
+          file={cropFile}
+          onSave={blob => { setCropFile(null); photoUploadMutation.mutate(blob) }}
+          onCancel={() => setCropFile(null)}
+        />
+      )}
     </div>
   )
 }
@@ -585,46 +594,22 @@ function OfferLetterModal({
   userName: string
   onClose: () => void
 }) {
-  const [letterType, setLetterType] = useState<'offer' | 'joining'>('offer')
-  const [terms, setTerms] = useState<string[]>([])
-  const [additionalNotes, setAdditionalNotes] = useState('')
+  const now = new Date()
+  const [docType, setDocType] = useState<'offer_letter' | 'joining_letter' | 'payslip'>('offer_letter')
+  const [payMonth, setPayMonth] = useState(now.getMonth() + 1)
+  const [payYear, setPayYear] = useState(now.getFullYear())
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // Fetch default terms for the selected letter type
-  const { data: defaultTerms } = useQuery<string[]>({
-    queryKey: ['defaultOfferLetterTerms', letterType],
-    queryFn: () => fetchDefaultOfferLetterTerms(letterType),
-  })
-
-  // Initialize terms from defaults when loaded or letter type changes
-  const [termsInitialized, setTermsInitialized] = useState<string | null>(null)
-  if (defaultTerms && termsInitialized !== letterType) {
-    setTerms(defaultTerms)
-    setTermsInitialized(letterType)
-  }
-
-  const handleTermChange = (index: number, value: string) => {
-    setTerms((prev) => prev.map((t, i) => (i === index ? value : t)))
-  }
-
-  const addTerm = () => {
-    setTerms((prev) => [...prev, ''])
-  }
-
-  const removeTerm = (index: number) => {
-    setTerms((prev) => prev.filter((_, i) => i !== index))
-  }
 
   const handleGenerate = async () => {
     setIsGenerating(true)
     setError(null)
     try {
-      await generateOfferLetter(userId, {
-        letterType,
-        terms: terms.filter((t) => t.trim() !== ''),
-        additionalNotes: additionalNotes.trim() || undefined,
-      })
+      if (docType === 'payslip') {
+        await generateDocument(userId, 'payslip', { month: payMonth, year: payYear })
+      } else {
+        await generateDocument(userId, docType)
+      }
       onClose()
     } catch (err) {
       setError((err as Error).message)
@@ -635,11 +620,14 @@ function OfferLetterModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col mx-4" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Generate Offer Letter</h2>
+            <h2 className="text-lg font-bold text-slate-900">Generate Document</h2>
             <p className="text-xs text-slate-500 mt-0.5">for {userName}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -647,110 +635,63 @@ function OfferLetterModal({
           </button>
         </div>
 
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* Letter Type */}
+        <div className="px-6 py-5 space-y-5">
+          {/* Document type */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Letter Type</label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setLetterType('offer')}
-                className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg border transition-colors ${
-                  letterType === 'offer'
-                    ? 'bg-teal-50 border-teal-300 text-teal-700'
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <span className="material-symbols-outlined text-base align-middle mr-1.5">mail</span>
-                Offer Letter
-              </button>
-              <button
-                onClick={() => setLetterType('joining')}
-                className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg border transition-colors ${
-                  letterType === 'joining'
-                    ? 'bg-teal-50 border-teal-300 text-teal-700'
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <span className="material-symbols-outlined text-base align-middle mr-1.5">handshake</span>
-                Joining Letter
-              </button>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Document Type</label>
+            <div className="flex gap-2 flex-wrap">
+              {[
+                { value: 'offer_letter',   icon: 'mail',         label: 'Offer Letter' },
+                { value: 'joining_letter', icon: 'handshake',    label: 'Joining Letter' },
+                { value: 'payslip',        icon: 'receipt_long', label: 'Payslip' },
+              ].map(({ value, icon, label }) => (
+                <button
+                  key={value}
+                  onClick={() => setDocType(value as any)}
+                  className={`flex-1 min-w-[120px] px-4 py-2.5 text-sm font-medium rounded-lg border transition-colors ${
+                    docType === value
+                      ? 'bg-teal-50 border-teal-300 text-teal-700'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-base align-middle mr-1.5">{icon}</span>
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Auto-generated content info */}
+          {docType === 'payslip' && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Pay Period</label>
+              <div className="flex gap-2">
+                <select
+                  value={payMonth}
+                  onChange={e => setPayMonth(Number(e.target.value))}
+                  className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  {['January','February','March','April','May','June',
+                    'July','August','September','October','November','December']
+                    .map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                </select>
+                <input
+                  type="number"
+                  min="2000"
+                  max="2100"
+                  value={payYear}
+                  onChange={e => setPayYear(Number(e.target.value))}
+                  className="w-24 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2.5 p-3 bg-teal-50 rounded-lg border border-teal-100">
             <span className="material-symbols-outlined text-teal-500 text-lg shrink-0 mt-0.5">auto_awesome</span>
-            <div className="text-xs text-teal-700 leading-relaxed">
-              <p className="font-medium mb-1">The following sections are auto-generated:</p>
-              <ul className="list-disc ml-4 space-y-0.5 text-teal-600">
-                <li>Institution header & date</li>
-                <li>Opening paragraph (name, designation, department)</li>
-                <li>Joining / offer details</li>
-                <li>Compensation table (salary breakdown)</li>
-                <li>Signature blocks</li>
-              </ul>
-            </div>
-          </div>
-
-          {/* Terms & Conditions */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm font-medium text-slate-700">Terms & Conditions</label>
-              <button
-                onClick={addTerm}
-                className="inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700"
-              >
-                <span className="material-symbols-outlined text-base">add</span>
-                Add Term
-              </button>
-            </div>
-            <p className="text-xs text-slate-400 mb-3">
-              Edit, add, or remove terms. These will appear as a numbered list in the letter.
+            <p className="text-xs text-teal-700 leading-relaxed">
+              Uses your organisation's default template for this document type. Customise templates at{' '}
+              <strong>Settings → Document Templates</strong>.
             </p>
-            <div className="space-y-2">
-              {terms.map((term, i) => (
-                <div key={i} className="flex gap-2 items-start group">
-                  <span className="shrink-0 w-6 h-9 flex items-center justify-center text-xs font-semibold text-slate-400">
-                    {i + 1}.
-                  </span>
-                  <textarea
-                    value={term}
-                    onChange={(e) => handleTermChange(i, e.target.value)}
-                    rows={2}
-                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-y"
-                  />
-                  <button
-                    onClick={() => removeTerm(i)}
-                    className="shrink-0 mt-1.5 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
-                    title="Remove this term"
-                  >
-                    <span className="material-symbols-outlined text-lg">delete</span>
-                  </button>
-                </div>
-              ))}
-              {terms.length === 0 && (
-                <p className="text-xs text-slate-400 italic py-2">No terms added. Default terms will be used.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Additional Notes */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Additional Notes
-              <span className="text-slate-400 font-normal ml-1">(optional)</span>
-            </label>
-            <p className="text-xs text-slate-400 mb-2">
-              Any extra information to include after the terms section.
-            </p>
-            <textarea
-              value={additionalNotes}
-              onChange={(e) => setAdditionalNotes(e.target.value)}
-              placeholder="e.g., Please bring original documents for verification..."
-              rows={2}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-y"
-            />
           </div>
         </div>
 
@@ -760,7 +701,10 @@ function OfferLetterModal({
             {error && <p className="text-xs text-rose-500 max-w-xs">{error}</p>}
           </div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-slate-100 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors"
+            >
               Cancel
             </button>
             <button

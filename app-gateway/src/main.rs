@@ -2,10 +2,12 @@ mod auth;
 mod db;
 mod errors;
 mod graphql;
-mod offer_letter;
+mod documents;
+mod mobile;
+mod offer_letter; // kept for any remaining internal references
 mod uploads;
 
-use axum::{extract::Extension, middleware, routing::{get, post}, Router};
+use axum::{extract::Extension, middleware, routing::{delete, get, post}, Router};
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use tower_http::cors::{Any, CorsLayer};
@@ -80,8 +82,21 @@ async fn main() {
 
     // Assemble the Axum router.
     let app = Router::new()
+        // Health check — used by monitoring and Android connectivity pre-flight.
+        .route("/health", get(|| async { "ok" }))
         .route("/graphql", post(graphql_handler))
-        .route("/api/offer-letter/{user_id}", get(offer_letter::offer_letter_handler).post(offer_letter::generate_offer_letter_handler))
+        // Mobile REST auth endpoints (unauthenticated)
+        .route("/api/mobile/auth", post(mobile::mobile_auth_handler))
+        .route("/api/mobile/auth/select-org", post(mobile::mobile_select_org_handler))
+        .route("/api/mobile/refresh", post(mobile::mobile_refresh_handler))
+        // Mobile logout (requires Bearer token)
+        .route("/api/mobile/logout", delete(mobile::mobile_logout_handler))
+        // New document generation endpoints
+        .route("/api/documents/{entity_id}/generate", get(documents::generate_document_handler))
+        .route("/api/documents/preview", post(documents::preview_document_handler))
+        // Backward-compatible offer letter path
+        .route("/api/offer-letter/{user_id}", get(documents::offer_letter_compat_handler))
+        .route("/api/organisations/logo", post(uploads::upload_org_logo))
         .route("/api/students/{student_id}/photo", post(uploads::upload_student_photo))
         .route("/api/users/{user_id}/photo", post(uploads::upload_user_photo))
         .route("/api/me/photo", post(uploads::upload_my_photo))

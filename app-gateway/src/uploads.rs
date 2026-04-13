@@ -211,6 +211,160 @@ pub async fn upload_my_photo(
     })))
 }
 
+/// Upload an organisation logo. JPEG/PNG → WebP 256×256; SVG stored as-is.
+/// Requires settings.update permission.
+pub async fn upload_org_logo(
+    Extension(pool): Extension<PgPool>,
+    user_ctx: Option<Extension<UserContext>>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, UploadError> {
+    let user_ctx = user_ctx
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": "Authentication required" })),
+            )
+        })?
+        .0;
+
+    if user_ctx.system_role != crate::auth::SystemRole::Superadmin
+        && !user_ctx.permissions.contains("settings.update")
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Access denied" })),
+        ));
+    }
+
+    let org_id    = user_ctx.org_id.clone();
+    let tenant_id = user_ctx.tenant_id.clone();
+
+    // Read the "logo" field from multipart.
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut content_type_str = String::from("application/octet-stream");
+    while let Ok(Some(field)) = multipart.next_field().await {
+        if field.name() == Some("logo") {
+            content_type_str = field
+                .content_type()
+                .unwrap_or("application/octet-stream")
+                .to_string();
+            let bytes = field.bytes().await.map_err(|e| {
+                tracing::error!("Failed to read logo upload: {e}");
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "Failed to read uploaded file" })),
+                )
+            })?;
+            file_bytes = Some(bytes.to_vec());
+            break;
+        }
+    }
+
+    let bytes = file_bytes.ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "No 'logo' field found in upload" })),
+        )
+    })?;
+
+    if bytes.len() > 5 * 1024 * 1024 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "File too large (max 5 MB)" })),
+        ));
+    }
+
+    let is_svg = content_type_str.contains("svg")
+        || bytes.starts_with(b"<svg")
+        || bytes.starts_with(b"<?xml");
+
+    let dir = uploads_dir().join("orgs");
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| {
+        tracing::error!("Failed to create orgs dir: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Storage error" })),
+        )
+    })?;
+
+    let logo_url = if is_svg {
+        let filename = format!("{}.svg", org_id);
+        tokio::fs::write(dir.join(&filename), &bytes).await.map_err(|e| {
+            tracing::error!("Failed to write SVG: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to save file" })),
+            )
+        })?;
+        format!("/uploads/orgs/{}", filename)
+    } else {
+        // Decode, resize to 256×256, encode as WebP.
+        let img = ImageReader::new(Cursor::new(&bytes))
+            .with_guessed_format()
+            .map_err(|e| {
+                tracing::error!("Image format error: {e}");
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "Invalid image format" })),
+                )
+            })?
+            .decode()
+            .map_err(|e| {
+                tracing::error!("Image decode error: {e}");
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": "Failed to decode image" })),
+                )
+            })?;
+
+        let img = img.resize(256, 256, image::imageops::FilterType::Lanczos3);
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+        img.write_to(&mut buf, image::ImageFormat::WebP).map_err(|e| {
+            tracing::error!("WebP encode error: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to encode image" })),
+            )
+        })?;
+
+        let filename = format!("{}.webp", org_id);
+        tokio::fs::write(dir.join(&filename), buf.into_inner()).await.map_err(|e| {
+            tracing::error!("Failed to write WebP: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to save file" })),
+            )
+        })?;
+        format!("/uploads/orgs/{}", filename)
+    };
+
+    // Persist the URL on the organisation record (RLS scoped).
+    crate::db::execute_in_context(&pool, &tenant_id, &org_id, |conn| {
+        let url = logo_url.clone();
+        let oid = org_id.clone();
+        Box::pin(async move {
+            sqlx::query("UPDATE organisations SET logo_url = $1 WHERE id = $2::uuid")
+                .bind(&url)
+                .bind(&oid)
+                .execute(&mut *conn)
+                .await?;
+            Ok(())
+        })
+    })
+    .await
+    .map_err(|e| {
+        tracing::error!("DB error updating logo_url: {e}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Failed to update organisation" })),
+        )
+    })?;
+
+    tracing::info!(org_id = %org_id, is_svg = is_svg, "Org logo uploaded");
+
+    Ok(Json(serde_json::json!({ "logoUrl": logo_url })))
+}
+
 /// Admin uploads a photo for any user. Requires users.manage permission.
 pub async fn upload_user_photo(
     Extension(pool): Extension<PgPool>,
