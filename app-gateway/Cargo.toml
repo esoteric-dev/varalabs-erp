@@ -24,3 +24,5 @@ rand = "0.8"
 sha2 = "0.10"
 tempfile = "3"
 image = "0.25"
+aws-config = { version = "1.5", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.65"

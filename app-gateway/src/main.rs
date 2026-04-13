@@ -5,13 +5,14 @@ mod graphql;
 mod documents;
 mod mobile;
 mod offer_letter; // kept for any remaining internal references
+mod storage;
 mod uploads;
 
 use axum::{extract::Extension, middleware, routing::{delete, get, post}, Router};
+use aws_sdk_s3::Client as S3Client;
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
 
 use crate::auth::{auth_middleware, UserContext};
@@ -66,6 +67,9 @@ async fn main() {
 
     tracing::info!("Migrations applied");
 
+    // Initialize S3-compatible storage (MinIO, R2, Backblaze, Wasabi, AWS S3, etc.)
+    let s3_client = storage::init_s3_client();
+
     // Build the async-graphql schema.
     let pool_for_middleware = pool.clone();
     let pool_for_ext = pool.clone();
@@ -76,9 +80,6 @@ async fn main() {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-
-    // Uploads directory for serving static files (student photos, etc.)
-    let uploads_dir = env::var("UPLOADS_DIR").unwrap_or_else(|_| "./uploads".into());
 
     // Assemble the Axum router.
     let app = Router::new()
@@ -100,13 +101,14 @@ async fn main() {
         .route("/api/students/{student_id}/photo", post(uploads::upload_student_photo))
         .route("/api/users/{user_id}/photo", post(uploads::upload_user_photo))
         .route("/api/me/photo", post(uploads::upload_my_photo))
-        .nest_service("/uploads", ServeDir::new(&uploads_dir))
+        // /uploads is now proxied from S3 via nginx, no longer served locally
         .layer(middleware::from_fn_with_state(
             pool_for_middleware,
             auth_middleware,
         ))
         .layer(Extension(schema))
         .layer(Extension(pool_for_ext))
+        .layer(Extension(s3_client))
         .layer(cors);
 
     let bind_addr = env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into());

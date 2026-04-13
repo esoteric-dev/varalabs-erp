@@ -3,17 +3,13 @@ use axum::{
     http::StatusCode,
     response::Json,
 };
+use aws_sdk_s3::Client as S3Client;
 use image::ImageReader;
 use sqlx::PgPool;
-use std::{io::Cursor, path::PathBuf};
+use std::io::Cursor;
 
 use crate::auth::UserContext;
-
-/// Directory where photos are stored (WebP format).
-fn uploads_dir() -> PathBuf {
-    let dir = std::env::var("UPLOADS_DIR").unwrap_or_else(|_| "./uploads".into());
-    PathBuf::from(dir)
-}
+use crate::storage::{bucket_name, uploads_base_url};
 
 type UploadError = (StatusCode, Json<serde_json::Value>);
 
@@ -88,35 +84,42 @@ async fn extract_and_compress_photo(
     Ok(webp_cursor.into_inner())
 }
 
-/// Save WebP bytes to disk under the given subdirectory. Returns the public URL path.
-async fn save_photo(subdirectory: &str, id: &str, webp_buf: &[u8]) -> Result<String, UploadError> {
-    let dir = uploads_dir().join(subdirectory);
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| {
-        tracing::error!("Failed to create uploads dir: {e}");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": "Storage error" })),
-        )
-    })?;
+/// Upload WebP bytes to S3 under the given prefix. Returns the public URL path.
+async fn save_photo_to_s3(
+    s3_client: &S3Client,
+    subdirectory: &str,
+    id: &str,
+    webp_buf: &[u8],
+) -> Result<String, UploadError> {
+    let bucket = bucket_name();
+    let key = format!("{}/{}.webp", subdirectory, id);
 
-    let filename = format!("{}.webp", id);
-    let filepath = dir.join(&filename);
+    s3_client
+        .put_object()
+        .bucket(&bucket)
+        .key(&key)
+        .body(webp_buf.to_vec().into())
+        .content_type("image/webp")
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!("S3 upload failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to upload file to storage" })),
+            )
+        })?;
 
-    tokio::fs::write(&filepath, webp_buf).await.map_err(|e| {
-        tracing::error!("Failed to write file: {e}");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": "Failed to save file" })),
-        )
-    })?;
-
-    Ok(format!("/uploads/{}/{}", subdirectory, filename))
+    // Return the relative path that nginx proxies to S3
+    let base = uploads_base_url();
+    Ok(format!("{}/{}", base, key))
 }
 
-/// Upload a student photo: receives multipart form, compresses to WebP, saves to disk.
+/// Upload a student photo: receives multipart form, compresses to WebP, saves to S3.
 pub async fn upload_student_photo(
     Extension(pool): Extension<PgPool>,
     user_ctx: Option<Extension<UserContext>>,
+    Extension(s3_client): Extension<S3Client>,
     Path(student_id): Path<String>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, UploadError> {
@@ -128,7 +131,7 @@ pub async fn upload_student_photo(
     })?.0;
 
     let webp_buf = extract_and_compress_photo(&mut multipart).await?;
-    let photo_url = save_photo("students", &student_id, &webp_buf).await?;
+    let photo_url = save_photo_to_s3(&s3_client, "students", &student_id, &webp_buf).await?;
 
     let tenant_id = user_ctx.tenant_id.clone();
     let org_id = user_ctx.org_id.clone();
@@ -137,13 +140,11 @@ pub async fn upload_student_photo(
         let sid = student_id.clone();
         let url = photo_url.clone();
         Box::pin(async move {
-            // Update student record
             sqlx::query("UPDATE students SET photo_url = $1 WHERE id = $2::uuid")
                 .bind(&url)
                 .bind(&sid)
                 .execute(&mut *conn)
                 .await?;
-            // Also update the linked user record so the navbar photo works
             sqlx::query(
                 "UPDATE users SET photo_url = $1 WHERE id = (SELECT user_id FROM students WHERE id = $2::uuid)"
             )
@@ -163,7 +164,7 @@ pub async fn upload_student_photo(
         )
     })?;
 
-    tracing::info!(student_id = %student_id, size_bytes = webp_buf.len(), "Student photo uploaded");
+    tracing::info!(student_id = %student_id, size_bytes = webp_buf.len(), "Student photo uploaded to S3");
 
     Ok(Json(serde_json::json!({
         "photoUrl": photo_url,
@@ -175,6 +176,7 @@ pub async fn upload_student_photo(
 pub async fn upload_my_photo(
     Extension(pool): Extension<PgPool>,
     user_ctx: Option<Extension<UserContext>>,
+    Extension(s3_client): Extension<S3Client>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, UploadError> {
     let user_ctx = user_ctx.ok_or_else(|| {
@@ -187,9 +189,8 @@ pub async fn upload_my_photo(
     let user_id = &user_ctx.user_id;
 
     let webp_buf = extract_and_compress_photo(&mut multipart).await?;
-    let photo_url = save_photo("users", user_id, &webp_buf).await?;
+    let photo_url = save_photo_to_s3(&s3_client, "users", user_id, &webp_buf).await?;
 
-    // Update the users table directly (no RLS needed — updating own record by user_id)
     sqlx::query("UPDATE users SET photo_url = $1 WHERE id = $2::uuid")
         .bind(&photo_url)
         .bind(user_id)
@@ -203,7 +204,7 @@ pub async fn upload_my_photo(
             )
         })?;
 
-    tracing::info!(user_id = %user_id, size_bytes = webp_buf.len(), "User photo uploaded");
+    tracing::info!(user_id = %user_id, size_bytes = webp_buf.len(), "User photo uploaded to S3");
 
     Ok(Json(serde_json::json!({
         "photoUrl": photo_url,
@@ -216,6 +217,7 @@ pub async fn upload_my_photo(
 pub async fn upload_org_logo(
     Extension(pool): Extension<PgPool>,
     user_ctx: Option<Extension<UserContext>>,
+    Extension(s3_client): Extension<S3Client>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, UploadError> {
     let user_ctx = user_ctx
@@ -236,10 +238,9 @@ pub async fn upload_org_logo(
         ));
     }
 
-    let org_id    = user_ctx.org_id.clone();
+    let org_id = user_ctx.org_id.clone();
     let tenant_id = user_ctx.tenant_id.clone();
 
-    // Read the "logo" field from multipart.
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut content_type_str = String::from("application/octet-stream");
     while let Ok(Some(field)) = multipart.next_field().await {
@@ -278,27 +279,28 @@ pub async fn upload_org_logo(
         || bytes.starts_with(b"<svg")
         || bytes.starts_with(b"<?xml");
 
-    let dir = uploads_dir().join("orgs");
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| {
-        tracing::error!("Failed to create orgs dir: {e}");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": "Storage error" })),
-        )
-    })?;
+    let bucket = bucket_name();
 
     let logo_url = if is_svg {
-        let filename = format!("{}.svg", org_id);
-        tokio::fs::write(dir.join(&filename), &bytes).await.map_err(|e| {
-            tracing::error!("Failed to write SVG: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to save file" })),
-            )
-        })?;
-        format!("/uploads/orgs/{}", filename)
+        let key = format!("orgs/{}.svg", org_id);
+        s3_client
+            .put_object()
+            .bucket(&bucket)
+            .key(&key)
+            .body(bytes.to_vec().into())
+            .content_type("image/svg+xml")
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!("S3 SVG upload failed: {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": "Failed to save SVG" })),
+                )
+            })?;
+        let base = uploads_base_url();
+        format!("{}/{}", base, key)
     } else {
-        // Decode, resize to 256×256, encode as WebP.
         let img = ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
             .map_err(|e| {
@@ -327,18 +329,26 @@ pub async fn upload_org_logo(
             )
         })?;
 
-        let filename = format!("{}.webp", org_id);
-        tokio::fs::write(dir.join(&filename), buf.into_inner()).await.map_err(|e| {
-            tracing::error!("Failed to write WebP: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to save file" })),
-            )
-        })?;
-        format!("/uploads/orgs/{}", filename)
+        let key = format!("orgs/{}.webp", org_id);
+        s3_client
+            .put_object()
+            .bucket(&bucket)
+            .key(&key)
+            .body(buf.into_inner().to_vec().into())
+            .content_type("image/webp")
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!("S3 WebP upload failed: {e}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": "Failed to save WebP image" })),
+                )
+            })?;
+        let base = uploads_base_url();
+        format!("{}/{}", base, key)
     };
 
-    // Persist the URL on the organisation record (RLS scoped).
     crate::db::execute_in_context(&pool, &tenant_id, &org_id, |conn| {
         let url = logo_url.clone();
         let oid = org_id.clone();
@@ -360,7 +370,7 @@ pub async fn upload_org_logo(
         )
     })?;
 
-    tracing::info!(org_id = %org_id, is_svg = is_svg, "Org logo uploaded");
+    tracing::info!(org_id = %org_id, is_svg = is_svg, "Org logo uploaded to S3");
 
     Ok(Json(serde_json::json!({ "logoUrl": logo_url })))
 }
@@ -369,6 +379,7 @@ pub async fn upload_org_logo(
 pub async fn upload_user_photo(
     Extension(pool): Extension<PgPool>,
     user_ctx: Option<Extension<UserContext>>,
+    Extension(s3_client): Extension<S3Client>,
     Path(user_id): Path<String>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, UploadError> {
@@ -379,7 +390,6 @@ pub async fn upload_user_photo(
         )
     })?.0;
 
-    // Check permission (admin only)
     if user_ctx.system_role != crate::auth::SystemRole::Superadmin
         && !user_ctx.permissions.contains("users.manage")
     {
@@ -390,9 +400,8 @@ pub async fn upload_user_photo(
     }
 
     let webp_buf = extract_and_compress_photo(&mut multipart).await?;
-    let photo_url = save_photo("users", &user_id, &webp_buf).await?;
+    let photo_url = save_photo_to_s3(&s3_client, "users", &user_id, &webp_buf).await?;
 
-    // Update the users table
     sqlx::query("UPDATE users SET photo_url = $1 WHERE id = $2::uuid")
         .bind(&photo_url)
         .bind(&user_id)
@@ -406,7 +415,7 @@ pub async fn upload_user_photo(
             )
         })?;
 
-    tracing::info!(user_id = %user_id, size_bytes = webp_buf.len(), "Admin uploaded user photo");
+    tracing::info!(user_id = %user_id, size_bytes = webp_buf.len(), "Admin uploaded user photo to S3");
 
     Ok(Json(serde_json::json!({
         "photoUrl": photo_url,

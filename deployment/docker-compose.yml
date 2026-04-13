@@ -7,8 +7,6 @@ services:
       - .env
     expose:
       - "8080"
-    volumes:
-      - uploads-data:/app/uploads
     networks:
       - erp-net
     logging:
@@ -31,6 +29,48 @@ services:
         max-size: "5m"
         max-file: "3"
 
+  minio:
+    image: minio/minio:latest
+    container_name: erp-minio
+    restart: always
+    command: server /data --console-address ":9001"
+    expose:
+      - "9000"
+      - "9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin123}
+    volumes:
+      - minio-data:/data
+    networks:
+      - erp-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Creates the S3 bucket on first run (idempotent)
+  minio-init:
+    image: minio/mc:latest
+    container_name: erp-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY:-minioadmin} ${S3_SECRET_KEY:-minioadmin123};
+      mc mb --ignore-existing local/${S3_BUCKET:-erp-uploads};
+      mc anonymous set public local/${S3_BUCKET:-erp-uploads};
+      exit 0;
+      "
+    networks:
+      - erp-net
+
   nginx-proxy:
     image: nginx:1.27-alpine
     container_name: erp-nginx-proxy
@@ -38,6 +78,7 @@ services:
     depends_on:
       - frontend
       - app-gateway
+      - minio
     ports:
       - "80:80"
       - "443:443"
@@ -53,8 +94,8 @@ services:
         max-file: "3"
 
 volumes:
-  uploads-data:
-    name: erp-uploads-data
+  minio-data:
+    name: erp-minio-data
 
 networks:
   erp-net:
