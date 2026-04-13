@@ -41,6 +41,7 @@ function LoginPage() {
       const { token, refreshToken } = await loginUser(email, password, orgSlug)
       localStorage.setItem('authToken', token)
       localStorage.setItem('refreshToken', refreshToken)
+      if (orgSlug) localStorage.setItem('orgSlug', orgSlug)
       window.location.href = '/'
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')

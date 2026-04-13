@@ -33,6 +33,7 @@ const processQueue = (error: Error | null, token: string | null = null) => {
 const clearAndRedirect = () => {
   localStorage.removeItem('authToken')
   localStorage.removeItem('refreshToken')
+  localStorage.removeItem('orgSlug')
   if (!window.location.pathname.includes('/login')) {
     window.location.href = '/login'
   }

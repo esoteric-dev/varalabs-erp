@@ -167,6 +167,8 @@ function AuthenticatedLayout() {
 
   const handleLogout = () => {
     localStorage.removeItem('authToken')
+    localStorage.removeItem('refreshToken')
+    localStorage.removeItem('orgSlug')
     window.location.href = '/login'
   }
 
