@@ -72,15 +72,10 @@ export function TenantAdminDashboard() {
     setTimeout(() => setCopiedField(null), 2000)
   }
 
-  const getSubdomainUrl = (slug: string) => {
-    const host = window.location.hostname
-    const port = window.location.port ? `:${window.location.port}` : ''
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return `${window.location.protocol}//${slug}.localhost${port}/`
-    }
-    const parts = host.split('.')
-    const baseDomain = parts.length > 2 ? parts.slice(1).join('.') : host
-    return `${window.location.protocol}//${slug}.${baseDomain}${port}/`
+  const getOrgUrl = (slug: string) => {
+    const { protocol, hostname, port } = window.location
+    const portStr = port ? `:${port}` : ''
+    return `${protocol}//${hostname}${portStr}/${slug}/`
   }
 
   const toggleOrg = (orgId: string) => {
@@ -164,19 +159,19 @@ export function TenantAdminDashboard() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Subdomain
+                  URL Slug
                 </label>
                 <div className="flex items-center">
+                  <span className="px-3 py-2 bg-gray-100 border border-r-0 border-gray-200 rounded-l-lg text-sm text-gray-500 whitespace-nowrap">
+                    varalabs.dev/
+                  </span>
                   <input
                     value={orgSlug}
                     onChange={(e) => handleSlugChange(e.target.value)}
                     required
-                    className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                     placeholder="greenwood"
                   />
-                  <span className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-200 rounded-r-lg text-sm text-gray-500">
-                    .varalabs.dev
-                  </span>
                 </div>
                 {orgSlug && orgSlug.length < 3 && (
                   <p className="mt-1 text-xs text-red-500">
@@ -256,7 +251,7 @@ export function TenantAdminDashboard() {
                       {org.name}
                     </h3>
                     <p className="text-xs text-teal-600 font-medium">
-                      {org.slug}.varalabs.dev
+                      varalabs.dev/{org.slug}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -269,7 +264,7 @@ export function TenantAdminDashboard() {
                       })}
                     </span>
                     <a
-                      href={getSubdomainUrl(org.slug)}
+                      href={getOrgUrl(org.slug)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-teal-600 hover:text-teal-700 transition-colors"
@@ -486,15 +481,15 @@ function CustomDomainsTab({
         )}
       </div>
 
-      {/* DNS Instructions */}
+      {/* Portal Link */}
       <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
         <p className="text-xs text-blue-700">
-          <span className="font-semibold">DNS Setup:</span> Add a CNAME record pointing your custom domain to{' '}
+          <span className="font-semibold">Portal URL:</span>{' '}
           <button
-            onClick={() => onCopy(`${org.slug}.varalabs.dev`, 'cname')}
+            onClick={() => onCopy(getOrgUrl(org.slug), 'cname')}
             className="font-mono font-medium text-blue-800 hover:underline inline-flex items-center gap-1"
           >
-            {org.slug}.varalabs.dev
+            varalabs.dev/{org.slug}
             {copiedField === 'cname' ? (
               <Check className="w-3 h-3 text-emerald-500" />
             ) : (
