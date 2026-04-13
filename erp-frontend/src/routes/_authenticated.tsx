@@ -169,7 +169,7 @@ function AuthenticatedLayout() {
     localStorage.removeItem('authToken')
     localStorage.removeItem('refreshToken')
     localStorage.removeItem('orgSlug')
-    window.location.href = '/login'
+    window.location.href = orgSlug ? `/${orgSlug}/login` : '/login'
   }
 
   return (

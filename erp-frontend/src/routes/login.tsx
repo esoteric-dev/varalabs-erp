@@ -42,7 +42,7 @@ function LoginPage() {
       localStorage.setItem('authToken', token)
       localStorage.setItem('refreshToken', refreshToken)
       if (orgSlug) localStorage.setItem('orgSlug', orgSlug)
-      window.location.href = '/'
+      window.location.href = orgSlug ? `/${orgSlug}/` : '/'
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
       setLoading(false)
