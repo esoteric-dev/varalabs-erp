@@ -31,16 +31,11 @@ const processQueue = (error: Error | null, token: string | null = null) => {
 }
 
 const clearAndRedirect = () => {
-  // Read orgSlug from path before clearing storage
-  const KNOWN = ['login', 'welcome', 'signup']
-  const seg = window.location.pathname.split('/').filter(Boolean)[0] ?? ''
-  const orgSlug = seg && !KNOWN.includes(seg) ? seg : null
   localStorage.removeItem('authToken')
   localStorage.removeItem('refreshToken')
   localStorage.removeItem('orgSlug')
-  const loginPath = orgSlug ? `/${orgSlug}/login` : '/login'
-  if (!window.location.pathname.endsWith('/login')) {
-    window.location.href = loginPath
+  if (!window.location.pathname.includes('/login')) {
+    window.location.href = '/login'
   }
 }
 

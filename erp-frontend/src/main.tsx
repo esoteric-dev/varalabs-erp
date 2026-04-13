@@ -9,22 +9,31 @@ import { routeTree } from './routeTree.gen'
 
 const queryClient = new QueryClient()
 
-// 1. Extract org slug from URL path: varalabs.dev/greenwood/ → 'greenwood'
-//    Top-level route names are never org slugs.
-const KNOWN_ROUTES = new Set(['login', 'welcome', 'signup', 'about', 'terms', 'privacy'])
-const firstSegment = window.location.pathname.split('/').filter(Boolean)[0] ?? ''
-const orgSlug: string | null =
-  firstSegment && !KNOWN_ROUTES.has(firstSegment) ? firstSegment : null
+// 1. Extract the org slug from subdomain
+const host = window.location.hostname
+const parts = host.split('.')
+// Detect subdomain:
+//   "greenwood.localhost"      → orgSlug = "greenwood"
+//   "greenwood.varalabs.dev"   → orgSlug = "greenwood"
+//   "localhost"                → orgSlug = null
+//   "varalabs.dev"             → orgSlug = null
+//   "www.varalabs.dev"         → orgSlug = null
+let orgSlug: string | null = null
+if (parts.length >= 2 && parts[parts.length - 1] === 'localhost') {
+  // *.localhost (local dev)
+  orgSlug = parts[0]
+} else if (parts.length > 2 && parts[0] !== 'www' && parts[0] !== 'app' && !host.endsWith('.azurewebsites.net')) {
+  // *.domain.tld (production, skip platform hostnames and app subdomain)
+  orgSlug = parts[0]
+}
 
 // 2. Auth check
 const authStatus: 'authenticated' | 'unauthenticated' =
   localStorage.getItem('authToken') ? 'authenticated' : 'unauthenticated'
 
 // 3. Create the Router and pass the Context
-//    basepath strips the org prefix so all route files stay as-is (/students, /login, etc.)
 const router = createRouter({
   routeTree,
-  basepath: orgSlug ? `/${orgSlug}` : '/',
   context: {
     queryClient,
     orgSlug,
