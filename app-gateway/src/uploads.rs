@@ -1,7 +1,7 @@
 use axum::{
     extract::{Extension, Multipart, Path},
-    http::StatusCode,
-    response::Json,
+    http::{StatusCode, header},
+    response::{IntoResponse, Redirect, Response},
 };
 use aws_sdk_s3::Client as S3Client;
 use image::ImageReader;
@@ -9,9 +9,9 @@ use sqlx::PgPool;
 use std::io::Cursor;
 
 use crate::auth::UserContext;
-use crate::storage::{bucket_name, uploads_base_url};
+use crate::storage::{bucket_name, generate_presigned_url, uploads_serving_strategy};
 
-type UploadError = (StatusCode, Json<serde_json::Value>);
+type UploadError = (StatusCode, axum::Json<serde_json::Value>);
 
 /// Extract and compress the photo from multipart form data.
 /// Returns the WebP-encoded bytes.
@@ -25,7 +25,7 @@ async fn extract_and_compress_photo(
                 tracing::error!("Failed to read upload: {e}");
                 (
                     StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": "Failed to read uploaded file" })),
+                    axum::Json(serde_json::json!({ "error": "Failed to read uploaded file" })),
                 )
             })?;
             file_data = Some(bytes.to_vec());
@@ -36,14 +36,14 @@ async fn extract_and_compress_photo(
     let file_data = file_data.ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "No 'photo' field found in upload" })),
+            axum::Json(serde_json::json!({ "error": "No 'photo' field found in upload" })),
         )
     })?;
 
     if file_data.len() > 10 * 1024 * 1024 {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "File too large (max 10MB)" })),
+            axum::Json(serde_json::json!({ "error": "File too large (max 10MB)" })),
         ));
     }
 
@@ -53,7 +53,7 @@ async fn extract_and_compress_photo(
             tracing::error!("Failed to guess image format: {e}");
             (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Invalid image format" })),
+                axum::Json(serde_json::json!({ "error": "Invalid image format" })),
             )
         })?
         .decode()
@@ -61,7 +61,7 @@ async fn extract_and_compress_photo(
             tracing::error!("Failed to decode image: {e}");
             (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Failed to decode image" })),
+                axum::Json(serde_json::json!({ "error": "Failed to decode image" })),
             )
         })?;
 
@@ -77,14 +77,14 @@ async fn extract_and_compress_photo(
             tracing::error!("Failed to encode WebP: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to compress image" })),
+                axum::Json(serde_json::json!({ "error": "Failed to compress image" })),
             )
         })?;
 
     Ok(webp_cursor.into_inner())
 }
 
-/// Upload WebP bytes to S3 under the given prefix. Returns the public URL path.
+/// Upload WebP bytes to S3 under the given prefix. Returns the S3 key (relative path).
 async fn save_photo_to_s3(
     s3_client: &S3Client,
     subdirectory: &str,
@@ -106,13 +106,12 @@ async fn save_photo_to_s3(
             tracing::error!("S3 upload failed: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to upload file to storage" })),
+                axum::Json(serde_json::json!({ "error": "Failed to upload file to storage" })),
             )
         })?;
 
-    // Return the relative path that nginx proxies to S3
-    let base = uploads_base_url();
-    Ok(format!("{}/{}", base, key))
+    // Return relative path stored in DB (used to generate presigned URL)
+    Ok(format!("/uploads/{}", key))
 }
 
 /// Upload a student photo: receives multipart form, compresses to WebP, saves to S3.
@@ -122,11 +121,11 @@ pub async fn upload_student_photo(
     Extension(s3_client): Extension<S3Client>,
     Path(student_id): Path<String>,
     mut multipart: Multipart,
-) -> Result<Json<serde_json::Value>, UploadError> {
+) -> Result<axum::Json<serde_json::Value>, UploadError> {
     let user_ctx = user_ctx.ok_or_else(|| {
         (
             StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({ "error": "Authentication required" })),
+            axum::Json(serde_json::json!({ "error": "Authentication required" })),
         )
     })?.0;
 
@@ -160,14 +159,23 @@ pub async fn upload_student_photo(
         tracing::error!("DB error updating photo_url: {e}");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": "Failed to update student record" })),
+            axum::Json(serde_json::json!({ "error": "Failed to update student record" })),
         )
     })?;
 
+    // Generate presigned URL for immediate use
+    let serving_url = match uploads_serving_strategy() {
+        Some(base) => format!("{}/{}", base.trim_end_matches('/'), photo_url.trim_start_matches('/')),
+        None => {
+            let key = photo_url.trim_start_matches('/');
+            generate_presigned_url(&s3_client, key).await.unwrap_or(photo_url.clone())
+        }
+    };
+
     tracing::info!(student_id = %student_id, size_bytes = webp_buf.len(), "Student photo uploaded to S3");
 
-    Ok(Json(serde_json::json!({
-        "photoUrl": photo_url,
+    Ok(axum::Json(serde_json::json!({
+        "photoUrl": serving_url,
         "sizeBytes": webp_buf.len(),
     })))
 }
@@ -178,11 +186,11 @@ pub async fn upload_my_photo(
     user_ctx: Option<Extension<UserContext>>,
     Extension(s3_client): Extension<S3Client>,
     mut multipart: Multipart,
-) -> Result<Json<serde_json::Value>, UploadError> {
+) -> Result<axum::Json<serde_json::Value>, UploadError> {
     let user_ctx = user_ctx.ok_or_else(|| {
         (
             StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({ "error": "Authentication required" })),
+            axum::Json(serde_json::json!({ "error": "Authentication required" })),
         )
     })?.0;
 
@@ -200,14 +208,22 @@ pub async fn upload_my_photo(
             tracing::error!("DB error updating user photo_url: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to update profile photo" })),
+                axum::Json(serde_json::json!({ "error": "Failed to update profile photo" })),
             )
         })?;
 
+    let serving_url = match uploads_serving_strategy() {
+        Some(base) => format!("{}/{}", base.trim_end_matches('/'), photo_url.trim_start_matches('/')),
+        None => {
+            let key = photo_url.trim_start_matches('/');
+            generate_presigned_url(&s3_client, key).await.unwrap_or(photo_url.clone())
+        }
+    };
+
     tracing::info!(user_id = %user_id, size_bytes = webp_buf.len(), "User photo uploaded to S3");
 
-    Ok(Json(serde_json::json!({
-        "photoUrl": photo_url,
+    Ok(axum::Json(serde_json::json!({
+        "photoUrl": serving_url,
         "sizeBytes": webp_buf.len(),
     })))
 }
@@ -219,12 +235,12 @@ pub async fn upload_org_logo(
     user_ctx: Option<Extension<UserContext>>,
     Extension(s3_client): Extension<S3Client>,
     mut multipart: Multipart,
-) -> Result<Json<serde_json::Value>, UploadError> {
+) -> Result<axum::Json<serde_json::Value>, UploadError> {
     let user_ctx = user_ctx
         .ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({ "error": "Authentication required" })),
+                axum::Json(serde_json::json!({ "error": "Authentication required" })),
             )
         })?
         .0;
@@ -234,7 +250,7 @@ pub async fn upload_org_logo(
     {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Access denied" })),
+            axum::Json(serde_json::json!({ "error": "Access denied" })),
         ));
     }
 
@@ -253,7 +269,7 @@ pub async fn upload_org_logo(
                 tracing::error!("Failed to read logo upload: {e}");
                 (
                     StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": "Failed to read uploaded file" })),
+                    axum::Json(serde_json::json!({ "error": "Failed to read uploaded file" })),
                 )
             })?;
             file_bytes = Some(bytes.to_vec());
@@ -264,14 +280,14 @@ pub async fn upload_org_logo(
     let bytes = file_bytes.ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "No 'logo' field found in upload" })),
+            axum::Json(serde_json::json!({ "error": "No 'logo' field found in upload" })),
         )
     })?;
 
     if bytes.len() > 5 * 1024 * 1024 {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "File too large (max 5 MB)" })),
+            axum::Json(serde_json::json!({ "error": "File too large (max 5 MB)" })),
         ));
     }
 
@@ -295,11 +311,10 @@ pub async fn upload_org_logo(
                 tracing::error!("S3 SVG upload failed: {e}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({ "error": "Failed to save SVG" })),
+                    axum::Json(serde_json::json!({ "error": "Failed to save SVG" })),
                 )
             })?;
-        let base = uploads_base_url();
-        format!("{}/{}", base, key)
+        format!("/uploads/{}", key)
     } else {
         let img = ImageReader::new(Cursor::new(&bytes))
             .with_guessed_format()
@@ -307,7 +322,7 @@ pub async fn upload_org_logo(
                 tracing::error!("Image format error: {e}");
                 (
                     StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": "Invalid image format" })),
+                    axum::Json(serde_json::json!({ "error": "Invalid image format" })),
                 )
             })?
             .decode()
@@ -315,7 +330,7 @@ pub async fn upload_org_logo(
                 tracing::error!("Image decode error: {e}");
                 (
                     StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": "Failed to decode image" })),
+                    axum::Json(serde_json::json!({ "error": "Failed to decode image" })),
                 )
             })?;
 
@@ -325,7 +340,7 @@ pub async fn upload_org_logo(
             tracing::error!("WebP encode error: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to encode image" })),
+                axum::Json(serde_json::json!({ "error": "Failed to encode image" })),
             )
         })?;
 
@@ -342,11 +357,10 @@ pub async fn upload_org_logo(
                 tracing::error!("S3 WebP upload failed: {e}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({ "error": "Failed to save WebP image" })),
+                    axum::Json(serde_json::json!({ "error": "Failed to save WebP image" })),
                 )
             })?;
-        let base = uploads_base_url();
-        format!("{}/{}", base, key)
+        format!("/uploads/{}", key)
     };
 
     crate::db::execute_in_context(&pool, &tenant_id, &org_id, |conn| {
@@ -366,13 +380,21 @@ pub async fn upload_org_logo(
         tracing::error!("DB error updating logo_url: {e}");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": "Failed to update organisation" })),
+            axum::Json(serde_json::json!({ "error": "Failed to update organisation" })),
         )
     })?;
 
+    let serving_url = match uploads_serving_strategy() {
+        Some(base) => format!("{}/{}", base.trim_end_matches('/'), logo_url.trim_start_matches('/')),
+        None => {
+            let key = logo_url.trim_start_matches('/');
+            generate_presigned_url(&s3_client, key).await.unwrap_or(logo_url.clone())
+        }
+    };
+
     tracing::info!(org_id = %org_id, is_svg = is_svg, "Org logo uploaded to S3");
 
-    Ok(Json(serde_json::json!({ "logoUrl": logo_url })))
+    Ok(axum::Json(serde_json::json!({ "logoUrl": serving_url })))
 }
 
 /// Admin uploads a photo for any user. Requires users.manage permission.
@@ -382,11 +404,11 @@ pub async fn upload_user_photo(
     Extension(s3_client): Extension<S3Client>,
     Path(user_id): Path<String>,
     mut multipart: Multipart,
-) -> Result<Json<serde_json::Value>, UploadError> {
+) -> Result<axum::Json<serde_json::Value>, UploadError> {
     let user_ctx = user_ctx.ok_or_else(|| {
         (
             StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({ "error": "Authentication required" })),
+            axum::Json(serde_json::json!({ "error": "Authentication required" })),
         )
     })?.0;
 
@@ -395,7 +417,7 @@ pub async fn upload_user_photo(
     {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Access denied" })),
+            axum::Json(serde_json::json!({ "error": "Access denied" })),
         ));
     }
 
@@ -411,14 +433,51 @@ pub async fn upload_user_photo(
             tracing::error!("DB error updating user photo_url: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to update photo" })),
+                axum::Json(serde_json::json!({ "error": "Failed to update photo" })),
             )
         })?;
 
+    let serving_url = match uploads_serving_strategy() {
+        Some(base) => format!("{}/{}", base.trim_end_matches('/'), photo_url.trim_start_matches('/')),
+        None => {
+            let key = photo_url.trim_start_matches('/');
+            generate_presigned_url(&s3_client, key).await.unwrap_or(photo_url.clone())
+        }
+    };
+
     tracing::info!(user_id = %user_id, size_bytes = webp_buf.len(), "Admin uploaded user photo to S3");
 
-    Ok(Json(serde_json::json!({
-        "photoUrl": photo_url,
+    Ok(axum::Json(serde_json::json!({
+        "photoUrl": serving_url,
         "sizeBytes": webp_buf.len(),
     })))
+}
+
+/// Serve uploaded files via presigned URL redirect.
+/// Handles GET /uploads/{subdirectory}/{id}.webp
+pub async fn serve_uploaded_file(
+    Extension(s3_client): Extension<S3Client>,
+    Path(rest): Path<String>,
+) -> Response {
+    match uploads_serving_strategy() {
+        // Public bucket or CDN — redirect directly
+        Some(base) => {
+            let url = format!("{}/{}", base.trim_end_matches('/'), rest);
+            Redirect::temporary(&url).into_response()
+        }
+        // Private bucket — generate presigned URL and redirect
+        None => {
+            match generate_presigned_url(&s3_client, &rest).await {
+                Ok(presigned) => Redirect::temporary(&presigned).into_response(),
+                Err(e) => {
+                    tracing::error!("Failed to generate presigned URL: {e}");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        [(header::CONTENT_TYPE, "text/plain")],
+                        "Failed to generate download link",
+                    ).into_response()
+                }
+            }
+        }
+    }
 }

@@ -5,28 +5,14 @@ services:
     restart: always
     env_file:
       - .env
-    expose:
-      - "8080"
+    ports:
+      - "8080:8080"
     networks:
       - erp-net
     logging:
       driver: json-file
       options:
         max-size: "10m"
-        max-file: "3"
-
-  frontend:
-    image: ${FRONTEND_IMAGE}
-    container_name: erp-frontend
-    restart: always
-    expose:
-      - "80"
-    networks:
-      - erp-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
         max-file: "3"
 
   minio:
@@ -70,28 +56,6 @@ services:
       "
     networks:
       - erp-net
-
-  nginx-proxy:
-    image: nginx:1.27-alpine
-    container_name: erp-nginx-proxy
-    restart: always
-    depends_on:
-      - frontend
-      - app-gateway
-      - minio
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-    networks:
-      - erp-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
-        max-file: "3"
 
 volumes:
   minio-data:

@@ -101,7 +101,8 @@ async fn main() {
         .route("/api/students/{student_id}/photo", post(uploads::upload_student_photo))
         .route("/api/users/{user_id}/photo", post(uploads::upload_user_photo))
         .route("/api/me/photo", post(uploads::upload_my_photo))
-        // /uploads is now proxied from S3 via nginx, no longer served locally
+        // Uploaded files — generates presigned URL redirect to S3
+        .route("/uploads/{*rest}", get(uploads::serve_uploaded_file))
         .layer(middleware::from_fn_with_state(
             pool_for_middleware,
             auth_middleware,
