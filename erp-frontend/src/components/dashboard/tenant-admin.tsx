@@ -18,6 +18,12 @@ import type {
 
 type OrgTab = 'domains' | 'password' | 'analytics'
 
+const getOrgUrl = (slug: string) => {
+  const { protocol, hostname, port } = window.location
+  const portStr = port ? `:${port}` : ''
+  return `${protocol}//${hostname}${portStr}/${slug}/`
+}
+
 export function TenantAdminDashboard() {
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
@@ -72,11 +78,6 @@ export function TenantAdminDashboard() {
     setTimeout(() => setCopiedField(null), 2000)
   }
 
-  const getOrgUrl = (slug: string) => {
-    const { protocol, hostname, port } = window.location
-    const portStr = port ? `:${port}` : ''
-    return `${protocol}//${hostname}${portStr}/${slug}/`
-  }
 
   const toggleOrg = (orgId: string) => {
     if (expandedOrg === orgId) {
