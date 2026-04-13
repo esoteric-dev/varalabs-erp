@@ -116,10 +116,13 @@ That's it. GitHub Actions handles everything else.
 
 In **Cloudflare → varalabs.dev → DNS**:
 
-| Type | Name | Content | Proxy |
-|------|------|---------|-------|
-| A | `@` | `<VM_IP>` | Proxied ☁️ |
-| A | `*` | `<VM_IP>` | Proxied ☁️ |
+| Type | Name  | Content   | Proxy     |
+|------|-------|-----------|-----------|
+| A    | `@`   | `<VM_IP>` | Proxied ☁️ |
+| A    | `api` | `<VM_IP>` | Proxied ☁️ |
+| A    | `*`   | `<VM_IP>` | Proxied ☁️ |
+
+The `api.varalabs.dev` subdomain is the dedicated entry point for the Android app — it exposes only the backend API (no frontend). See [Android API Setup](./android-api.md) for the full mobile integration guide.
 
 **SSL/TLS Settings** (Cloudflare → SSL/TLS):
 - Encryption mode: **Full**
