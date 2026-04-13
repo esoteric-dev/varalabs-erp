@@ -57,6 +57,6 @@ USER runner
 
 # Run on port 8080 as expected by docker-compose and local Azure VM tests
 EXPOSE 8080
-ENV PORT=8080
+ENV BIND_ADDR=0.0.0.0:8080
 
 CMD ["/app/app-gateway"]
