@@ -81,8 +81,9 @@ jobs:
           SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
           DEPLOY_PORT=22
+          DEPLOY_HOST="${{ secrets.DEPLOY_HOST }}"
 
-          SSH_BASE_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=6 -o TCPKeepAlive=yes -o IPQoS=none -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectionAttempts=1"
+          SSH_BASE_OPTS="-4 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=6 -o TCPKeepAlive=yes -o IPQoS=none -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectionAttempts=1"
 
           retry() {
             local attempts="$1"
@@ -100,12 +101,27 @@ jobs:
             done
           }
 
-          echo "Checking SSH reachability: ${{ secrets.DEPLOY_HOST }}:$DEPLOY_PORT"
-          timeout 10 bash -lc "cat < /dev/null > /dev/tcp/${{ secrets.DEPLOY_HOST }}/$DEPLOY_PORT" || {
-            echo "Cannot open TCP connection to ${{ secrets.DEPLOY_HOST }}:$DEPLOY_PORT from GitHub runner."
+          echo "Checking SSH reachability: $DEPLOY_HOST:$DEPLOY_PORT"
+          timeout 10 bash -lc "cat < /dev/null > /dev/tcp/$DEPLOY_HOST/$DEPLOY_PORT" || {
+            echo "Cannot open TCP connection to $DEPLOY_HOST:$DEPLOY_PORT from GitHub runner."
             echo "Check VM firewall/NSG/UFW, SSHD status, and whether DEPLOY_PORT is correct."
             exit 1
           }
+
+          echo "Checking SSH banner/key response from $DEPLOY_HOST:$DEPLOY_PORT"
+          if ! timeout 12 ssh-keyscan -4 -T 10 -p "$DEPLOY_PORT" "$DEPLOY_HOST" > /tmp/ssh-keyscan.out 2>/tmp/ssh-keyscan.err; then
+            echo "SSH keyscan failed. TCP port is open but SSH did not complete handshake."
+            echo "Likely causes: wrong host/port target, Cloudflare proxy in front of DNS, SSHD not healthy, or network middlebox."
+            echo "--- ssh-keyscan stderr ---"
+            cat /tmp/ssh-keyscan.err || true
+            exit 1
+          fi
+
+          if [ ! -s /tmp/ssh-keyscan.out ]; then
+            echo "SSH keyscan returned no host keys; this endpoint may not be an SSH server."
+            echo "Use the VM public IP or a DNS record that points directly to the VM (no proxy)."
+            exit 1
+          fi
 
           retry 3 sshpass -e ssh -p "$DEPLOY_PORT" $SSH_BASE_OPTS ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p ~/erp-deployment"
           retry 3 sshpass -e scp -P "$DEPLOY_PORT" $SSH_BASE_OPTS /tmp/deploy.env deployment/docker-compose.yml \
@@ -116,8 +132,9 @@ jobs:
           SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
           DEPLOY_PORT=22
+          DEPLOY_HOST="${{ secrets.DEPLOY_HOST }}"
 
-          SSH_BASE_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=6 -o TCPKeepAlive=yes -o IPQoS=none -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectionAttempts=1"
+          SSH_BASE_OPTS="-4 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=6 -o TCPKeepAlive=yes -o IPQoS=none -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectionAttempts=1"
 
           retry() {
             local attempts="$1"
