@@ -80,7 +80,9 @@ jobs:
         env:
           SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=6 -o TCPKeepAlive=yes -o IPQoS=none"
+          DEPLOY_PORT=22
+
+          SSH_BASE_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=6 -o TCPKeepAlive=yes -o IPQoS=none -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectionAttempts=1"
 
           retry() {
             local attempts="$1"
@@ -92,21 +94,30 @@ jobs:
                 echo "Command failed after ${attempts} attempts: $*"
                 return 1
               fi
-              echo "Attempt ${n}/${attempts} failed. Retrying in 5s..."
+              echo "Attempt ${n}/${attempts} failed. Retrying in 8s..."
               n=$((n + 1))
-              sleep 5
+              sleep 8
             done
           }
 
-          retry 3 sshpass -e ssh $SSH_OPTS ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p ~/erp-deployment"
-          retry 3 sshpass -e scp $SSH_OPTS /tmp/deploy.env deployment/docker-compose.yml \
+          echo "Checking SSH reachability: ${{ secrets.DEPLOY_HOST }}:$DEPLOY_PORT"
+          timeout 10 bash -lc "cat < /dev/null > /dev/tcp/${{ secrets.DEPLOY_HOST }}/$DEPLOY_PORT" || {
+            echo "Cannot open TCP connection to ${{ secrets.DEPLOY_HOST }}:$DEPLOY_PORT from GitHub runner."
+            echo "Check VM firewall/NSG/UFW, SSHD status, and whether DEPLOY_PORT is correct."
+            exit 1
+          }
+
+          retry 3 sshpass -e ssh -p "$DEPLOY_PORT" $SSH_BASE_OPTS ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p ~/erp-deployment"
+          retry 3 sshpass -e scp -P "$DEPLOY_PORT" $SSH_BASE_OPTS /tmp/deploy.env deployment/docker-compose.yml \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/erp-deployment/
 
       - name: Deploy via SSH
         env:
           SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=6 -o TCPKeepAlive=yes -o IPQoS=none"
+          DEPLOY_PORT=22
+
+          SSH_BASE_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=6 -o TCPKeepAlive=yes -o IPQoS=none -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectionAttempts=1"
 
           retry() {
             local attempts="$1"
@@ -118,13 +129,13 @@ jobs:
                 echo "Command failed after ${attempts} attempts: $*"
                 return 1
               fi
-              echo "Attempt ${n}/${attempts} failed. Retrying in 5s..."
+              echo "Attempt ${n}/${attempts} failed. Retrying in 8s..."
               n=$((n + 1))
-              sleep 5
+              sleep 8
             done
           }
 
-          retry 3 sshpass -e ssh $SSH_OPTS ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "
+          retry 3 sshpass -e ssh -p "$DEPLOY_PORT" $SSH_BASE_OPTS ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "
             set -e
             cd ~/erp-deployment
             mv deploy.env .env
