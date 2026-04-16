@@ -80,17 +80,51 @@ jobs:
         env:
           SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
-          sshpass -e ssh $SSH_OPTS ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p ~/erp-deployment"
-          sshpass -e scp $SSH_OPTS /tmp/deploy.env deployment/docker-compose.yml \
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=6 -o TCPKeepAlive=yes -o IPQoS=none"
+
+          retry() {
+            local attempts="$1"
+            shift
+            local n=1
+            while true; do
+              "$@" && break
+              if [ "$n" -ge "$attempts" ]; then
+                echo "Command failed after ${attempts} attempts: $*"
+                return 1
+              fi
+              echo "Attempt ${n}/${attempts} failed. Retrying in 5s..."
+              n=$((n + 1))
+              sleep 5
+            done
+          }
+
+          retry 3 sshpass -e ssh $SSH_OPTS ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p ~/erp-deployment"
+          retry 3 sshpass -e scp $SSH_OPTS /tmp/deploy.env deployment/docker-compose.yml \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/erp-deployment/
 
       - name: Deploy via SSH
         env:
           SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
-          sshpass -e ssh $SSH_OPTS ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=6 -o TCPKeepAlive=yes -o IPQoS=none"
+
+          retry() {
+            local attempts="$1"
+            shift
+            local n=1
+            while true; do
+              "$@" && break
+              if [ "$n" -ge "$attempts" ]; then
+                echo "Command failed after ${attempts} attempts: $*"
+                return 1
+              fi
+              echo "Attempt ${n}/${attempts} failed. Retrying in 5s..."
+              n=$((n + 1))
+              sleep 5
+            done
+          }
+
+          retry 3 sshpass -e ssh $SSH_OPTS ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "
             set -e
             cd ~/erp-deployment
             mv deploy.env .env
