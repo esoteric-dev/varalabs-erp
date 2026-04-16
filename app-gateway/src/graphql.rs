@@ -894,29 +894,38 @@ impl QueryRoot {
             .map_err(|_| async_graphql::Error::new("Invalid org id in token"))?;
 
         // Verify membership.
-        let is_member: bool = sqlx::query_scalar(
-            "SELECT EXISTS(
-                SELECT 1 FROM user_organisations uo
-                JOIN organisations o ON o.id = uo.organisation_id
-                WHERE uo.user_id = $1
-                  AND uo.organisation_id = $2
-                  AND o.tenant_id = $3::uuid
-            )",
-        )
-        .bind(user_id)
-        .bind(org_id)
-        .bind(&user_ctx.tenant_id)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("DB error checking org membership: {e}");
-            async_graphql::Error::new("Internal server error")
-        })?;
+        // Superadmin and tenant_admin bypass — they manage orgs without
+        // being listed in user_organisations.
+        let skip_membership = matches!(
+            user_ctx.system_role,
+            crate::auth::SystemRole::Superadmin | crate::auth::SystemRole::TenantAdmin
+        );
 
-        if !is_member {
-            return Err(async_graphql::Error::new(
-                "User does not belong to this organisation",
-            ));
+        if !skip_membership {
+            let is_member: bool = sqlx::query_scalar(
+                "SELECT EXISTS(
+                    SELECT 1 FROM user_organisations uo
+                    JOIN organisations o ON o.id = uo.organisation_id
+                    WHERE uo.user_id = $1
+                      AND uo.organisation_id = $2
+                      AND o.tenant_id = $3::uuid
+                )",
+            )
+            .bind(user_id)
+            .bind(org_id)
+            .bind(&user_ctx.tenant_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error checking org membership: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+
+            if !is_member {
+                return Err(async_graphql::Error::new(
+                    "User does not belong to this organisation",
+                ));
+            }
         }
 
         let user = sqlx::query_as::<_, User>(
@@ -971,6 +980,14 @@ impl QueryRoot {
     /// Get the organisation's student onboarding configuration.
     async fn get_onboarding_config(&self, ctx: &Context<'_>) -> Result<OrgSettings> {
         let user_ctx = require_auth(ctx)?;
+
+        // Tenant-level users (no org) have no onboarding config to load.
+        if user_ctx.org_id.is_empty() {
+            return Ok(OrgSettings {
+                student_onboarding_config: async_graphql::types::Json(serde_json::json!({})),
+            });
+        }
+
         let pool = ctx.data::<PgPool>()?;
 
         let tenant_id = user_ctx.tenant_id.clone();
@@ -1018,7 +1035,7 @@ impl QueryRoot {
         let org_id = user_ctx.org_id.clone();
 
         // Check if the requesting user IS this student (allow self-access)
-        let is_own_record = {
+        let is_own_record = if user_ctx.system_role == SystemRole::User {
             let uid = user_ctx.user_id.clone();
             let sid = id.clone();
             let own: Option<bool> = execute_in_context(pool, &tenant_id, &org_id, |conn| {
@@ -1036,9 +1053,15 @@ impl QueryRoot {
             .await
             .map_err(|e| e.extend())?;
             own.unwrap_or(false)
+        } else {
+            false
         };
 
-        if !is_own_record && !user_ctx.permissions.contains("students.view") && user_ctx.system_role != SystemRole::Superadmin {
+        if !is_own_record
+            && !user_ctx.permissions.contains("students.view")
+            && user_ctx.system_role != SystemRole::Superadmin
+            && user_ctx.system_role != SystemRole::TenantAdmin
+        {
             return Err(
                 async_graphql::Error::new("Access denied: missing permission 'students.view'")
                     .extend_with(|_, ext: &mut async_graphql::ErrorExtensionValues| {
@@ -1047,19 +1070,55 @@ impl QueryRoot {
             );
         }
 
-        let student = execute_in_context(pool, &tenant_id, &org_id, |conn| {
-            Box::pin(async move {
-                let row = sqlx::query_as::<_, Student>(
-                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text, s.photo_url FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
+        let student = match user_ctx.system_role {
+            // Tenant-level roles can cross org boundaries inside their tenant.
+            SystemRole::TenantAdmin => {
+                sqlx::query_as::<_, Student>(
+                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text, s.photo_url
+                     FROM students s
+                     LEFT JOIN users u ON u.id = s.user_id
+                     WHERE s.id = $1::uuid AND s.tenant_id = $2::uuid",
                 )
                 .bind(&id)
-                .fetch_optional(conn)
-                .await?;
-                Ok(row)
-            })
-        })
-        .await
-        .map_err(|e| e.extend())?;
+                .bind(&tenant_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!("DB error fetching student: {e}");
+                    async_graphql::Error::new("Internal server error")
+                })?
+            }
+            SystemRole::Superadmin => {
+                sqlx::query_as::<_, Student>(
+                    "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text, s.photo_url
+                     FROM students s
+                     LEFT JOIN users u ON u.id = s.user_id
+                     WHERE s.id = $1::uuid",
+                )
+                .bind(&id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| {
+                    tracing::error!("DB error fetching student: {e}");
+                    async_graphql::Error::new("Internal server error")
+                })?
+            }
+            SystemRole::User => {
+                execute_in_context(pool, &tenant_id, &org_id, |conn| {
+                    Box::pin(async move {
+                        let row = sqlx::query_as::<_, Student>(
+                            "SELECT s.id::text, s.name, s.class_name, s.gender, s.date_of_birth::text, s.blood_group, s.religion, s.email, s.phone, s.admission_number, s.admission_date::text, u.email AS login_email, s.user_id::text, s.photo_url FROM students s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1::uuid",
+                        )
+                        .bind(&id)
+                        .fetch_optional(conn)
+                        .await?;
+                        Ok(row)
+                    })
+                })
+                .await
+                .map_err(|e| e.extend())?
+            }
+        };
 
         Ok(student)
     }
@@ -1092,9 +1151,16 @@ impl QueryRoot {
     /// Peek at the next admission number without consuming the sequence.
     async fn next_admission_number(&self, ctx: &Context<'_>) -> Result<String> {
         let user_ctx = require_auth(ctx)?;
-        let pool = ctx.data::<PgPool>()?;
 
         let year = chrono::Utc::now().format("%Y").to_string();
+
+        // No org context — return a placeholder so the form can still render.
+        if user_ctx.org_id.is_empty() {
+            return Ok(format!("ADM-{}-0001", year));
+        }
+
+        let pool = ctx.data::<PgPool>()?;
+
         let current_seq: Option<i32> = sqlx::query_scalar(
             "SELECT admission_seq FROM organisation_settings WHERE organisation_id = $1::uuid",
         )
@@ -2516,6 +2582,11 @@ impl QueryRoot {
     /// Get audit logs for the current organisation (admin only)
     async fn audit_logs(&self, ctx: &Context<'_>, limit: Option<i32>) -> Result<Vec<AuditLog>> {
         let user_ctx = require_permission(ctx, "users.view")?;
+
+        if user_ctx.org_id.is_empty() {
+            return Ok(vec![]);
+        }
+
         let pool = ctx.data::<PgPool>()?;
         let tenant_id = user_ctx.tenant_id.clone();
         let org_id = user_ctx.org_id.clone();
@@ -3067,12 +3138,33 @@ impl MutationRoot {
 
         // Resolve org: by slug if provided, by email domain, or fall back to user's first org
         let org_tenant = if let Some(ref slug) = org_slug {
-            Some(
-                sqlx::query_as::<_, OrgTenantRow>(
-                    "SELECT uo.organisation_id::text AS org_id, o.tenant_id::text AS tenant_id
-                     FROM user_organisations uo
-                     JOIN organisations o ON o.id = uo.organisation_id
-                     WHERE uo.user_id = $1::uuid AND o.slug = $2
+            // First try: direct membership (covers regular users and org admins)
+            let member_row = sqlx::query_as::<_, OrgTenantRow>(
+                "SELECT uo.organisation_id::text AS org_id, o.tenant_id::text AS tenant_id
+                 FROM user_organisations uo
+                 JOIN organisations o ON o.id = uo.organisation_id
+                 WHERE uo.user_id = $1::uuid AND o.slug = $2
+                 LIMIT 1",
+            )
+            .bind(&user_row.id)
+            .bind(slug)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error fetching org by slug: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+
+            if let Some(ot) = member_row {
+                Some(ot)
+            } else if user_row.system_role == "tenant_admin" {
+                // tenant_admin manages orgs at the tenant level without user_organisations rows.
+                // Verify the org belongs to this user's tenant and issue a scoped token.
+                let tenant_org = sqlx::query_as::<_, OrgTenantRow>(
+                    "SELECT o.id::text AS org_id, o.tenant_id::text AS tenant_id
+                     FROM organisations o
+                     JOIN users u ON u.tenant_id = o.tenant_id
+                     WHERE u.id = $1::uuid AND o.slug = $2
                      LIMIT 1",
                 )
                 .bind(&user_row.id)
@@ -3080,11 +3172,14 @@ impl MutationRoot {
                 .fetch_optional(pool)
                 .await
                 .map_err(|e| {
-                    tracing::error!("DB error fetching org by slug: {e}");
+                    tracing::error!("DB error fetching tenant org by slug: {e}");
                     async_graphql::Error::new("Internal server error")
                 })?
-                .ok_or_else(|| async_graphql::Error::new("You do not belong to this organisation"))?,
-            )
+                .ok_or_else(|| async_graphql::Error::new("Organisation not found in your tenant"))?;
+                Some(tenant_org)
+            } else {
+                return Err(async_graphql::Error::new("You do not belong to this organisation"));
+            }
         } else {
             // Try to extract org slug from email domain (e.g. admin@greenwood.com → "greenwood")
             let email_slug = extract_slug_from_email(&email);
@@ -3134,7 +3229,7 @@ impl MutationRoot {
         let (final_org_id, final_tenant_id) = match org_tenant {
             Some(ot) => (ot.org_id, ot.tenant_id),
             None => {
-                // User has no orgs yet (fresh signup). Look up tenant_id from the users table.
+                // User has no orgs yet via user_organisations.  Look up tenant_id.
                 let tid: Option<String> = sqlx::query_scalar(
                     "SELECT tenant_id::text FROM users WHERE id = $1::uuid",
                 )
@@ -3147,7 +3242,29 @@ impl MutationRoot {
                 })?
                 .flatten();
 
-                (String::new(), tid.unwrap_or_default())
+                // tenant_admin: fall back to the first org in their tenant so the
+                // JWT is always org-scoped (avoids empty org_id on every request).
+                if user_row.system_role == "tenant_admin" {
+                    if let Some(ref t) = tid {
+                        let first_org: Option<String> = sqlx::query_scalar(
+                            "SELECT id::text FROM organisations WHERE tenant_id = $1::uuid ORDER BY created_at LIMIT 1",
+                        )
+                        .bind(uuid::Uuid::parse_str(t).unwrap_or_default())
+                        .fetch_optional(pool)
+                        .await
+                        .unwrap_or(None);
+
+                        if let Some(oid) = first_org {
+                            (oid, t.clone())
+                        } else {
+                            (String::new(), t.clone())
+                        }
+                    } else {
+                        (String::new(), String::new())
+                    }
+                } else {
+                    (String::new(), tid.unwrap_or_default())
+                }
             }
         };
 
@@ -3782,12 +3899,30 @@ impl MutationRoot {
 
         // Resolve org: exactly identical logic as in login
         let org_tenant = if let Some(ref slug) = org_slug {
-            Some(
-                sqlx::query_as::<_, OrgTenantRow>(
-                    "SELECT uo.organisation_id::text AS org_id, o.tenant_id::text AS tenant_id
-                     FROM user_organisations uo
-                     JOIN organisations o ON o.id = uo.organisation_id
-                     WHERE uo.user_id = $1::uuid AND o.slug = $2
+            let member_row = sqlx::query_as::<_, OrgTenantRow>(
+                "SELECT uo.organisation_id::text AS org_id, o.tenant_id::text AS tenant_id
+                 FROM user_organisations uo
+                 JOIN organisations o ON o.id = uo.organisation_id
+                 WHERE uo.user_id = $1::uuid AND o.slug = $2
+                 LIMIT 1",
+            )
+            .bind(&user_row.id)
+            .bind(slug)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error fetching org by slug: {e}");
+                async_graphql::Error::new("Internal server error")
+            })?;
+
+            if let Some(ot) = member_row {
+                Some(ot)
+            } else if user_row.system_role == "tenant_admin" {
+                let tenant_org = sqlx::query_as::<_, OrgTenantRow>(
+                    "SELECT o.id::text AS org_id, o.tenant_id::text AS tenant_id
+                     FROM organisations o
+                     JOIN users u ON u.tenant_id = o.tenant_id
+                     WHERE u.id = $1::uuid AND o.slug = $2
                      LIMIT 1",
                 )
                 .bind(&user_row.id)
@@ -3795,11 +3930,14 @@ impl MutationRoot {
                 .fetch_optional(pool)
                 .await
                 .map_err(|e| {
-                    tracing::error!("DB error fetching org by slug: {e}");
+                    tracing::error!("DB error fetching tenant org by slug: {e}");
                     async_graphql::Error::new("Internal server error")
                 })?
-                .ok_or_else(|| async_graphql::Error::new("You do not belong to this organisation"))?,
-            )
+                .ok_or_else(|| async_graphql::Error::new("Organisation not found in your tenant"))?;
+                Some(tenant_org)
+            } else {
+                return Err(async_graphql::Error::new("You do not belong to this organisation"));
+            }
         } else {
             let email_slug = extract_slug_from_email(&user_row.email);
             let from_email = if let Some(ref slug) = email_slug {
@@ -3858,7 +3996,27 @@ impl MutationRoot {
                 })?
                 .flatten();
 
-                (String::new(), tid.unwrap_or_default())
+                if user_row.system_role == "tenant_admin" {
+                    if let Some(ref t) = tid {
+                        let first_org: Option<String> = sqlx::query_scalar(
+                            "SELECT id::text FROM organisations WHERE tenant_id = $1::uuid ORDER BY created_at LIMIT 1",
+                        )
+                        .bind(uuid::Uuid::parse_str(t).unwrap_or_default())
+                        .fetch_optional(pool)
+                        .await
+                        .unwrap_or(None);
+
+                        if let Some(oid) = first_org {
+                            (oid, t.clone())
+                        } else {
+                            (String::new(), t.clone())
+                        }
+                    } else {
+                        (String::new(), String::new())
+                    }
+                } else {
+                    (String::new(), tid.unwrap_or_default())
+                }
             }
         };
 

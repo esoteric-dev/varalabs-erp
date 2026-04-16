@@ -48,7 +48,7 @@ function StudentProfile() {
   const [isEditing, setIsEditing] = useState(false)
   const [editForm, setEditForm] = useState<UpdateStudentInput>({})
 
-  const { data: student, isLoading: loadingStudent } = useQuery({
+  const { data: student, isLoading: loadingStudent, isError: studentError, error } = useQuery({
     queryKey: ['student', studentId],
     queryFn: () => fetchStudent(studentId),
   })
@@ -169,6 +169,31 @@ function StudentProfile() {
           </div>
         </div>
         <div className="py-8 text-center text-sm text-slate-400">Loading student profile...</div>
+      </div>
+    )
+  }
+
+  if (studentError) {
+    return (
+      <div className="space-y-6">
+        <div className="w-full bg-gradient-to-r from-blue-500 to-indigo-400 rounded-xl relative overflow-hidden shadow-md">
+          <div className="relative z-10 px-8 pt-8 pb-24">
+            <div className="flex items-center gap-2 text-blue-50 text-sm mb-2">
+              <Link to="/students" className="hover:text-white transition-colors">Students</Link>
+              <span className="material-symbols-outlined text-base">chevron_right</span>
+              <span className="text-white font-medium">Error</span>
+            </div>
+            <h1 className="text-2xl font-bold text-white">Could Not Load Student</h1>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 -mt-20 relative z-20 mx-4 p-8 text-center">
+          <span className="material-symbols-outlined text-4xl text-rose-400 mb-2 block">error</span>
+          <p className="text-sm text-slate-500">{error instanceof Error ? error.message : 'Failed to load student profile.'}</p>
+          <Link to="/students" className="inline-flex items-center gap-1.5 mt-4 text-sm text-teal-600 hover:text-teal-700 font-medium">
+            <span className="material-symbols-outlined text-base">arrow_back</span>
+            Back to Directory
+          </Link>
+        </div>
       </div>
     )
   }

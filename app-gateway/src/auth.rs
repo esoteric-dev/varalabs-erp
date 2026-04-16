@@ -230,7 +230,9 @@ pub fn require_permission(
 ) -> async_graphql::Result<UserContext> {
     let user_ctx = require_auth(ctx)?;
 
-    if user_ctx.system_role == SystemRole::Superadmin {
+    if user_ctx.system_role == SystemRole::Superadmin
+        || user_ctx.system_role == SystemRole::TenantAdmin
+    {
         return Ok(user_ctx);
     }
 

@@ -100,8 +100,12 @@ async function customFetch(input: RequestInfo | URL, init?: RequestInit): Promis
   isRefreshing = true
 
   try {
-    const orgSlug = localStorage.getItem('orgSlug')
-    
+    // Prefer URL-derived org slug (most current) over localStorage
+    const KNOWN_ROUTES = ['login', 'welcome', 'signup', 'about', 'terms', 'privacy']
+    const seg = window.location.pathname.split('/').filter(Boolean)[0] ?? ''
+    const orgSlug = (seg && !KNOWN_ROUTES.includes(seg) ? seg : null)
+      ?? localStorage.getItem('orgSlug')
+
     // Perform the refresh token mutation directly via standard fetch to avoid loop
     const refreshQuery = {
       query: REFRESH_TOKEN_MUTATION.toString(),

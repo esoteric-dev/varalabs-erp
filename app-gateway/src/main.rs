@@ -95,8 +95,9 @@ async fn main() {
         // New document generation endpoints
         .route("/api/documents/{entity_id}/generate", get(documents::generate_document_handler))
         .route("/api/documents/preview", post(documents::preview_document_handler))
-        // Backward-compatible offer letter path
+        // Backward-compatible offer letter path (GET = default template, POST = custom content)
         .route("/api/offer-letter/{user_id}", get(documents::offer_letter_compat_handler))
+        .route("/api/offer-letter/{user_id}", post(documents::offer_letter_custom_handler))
         .route("/api/organisations/logo", post(uploads::upload_org_logo))
         .route("/api/students/{student_id}/photo", post(uploads::upload_student_photo))
         .route("/api/users/{user_id}/photo", post(uploads::upload_user_photo))

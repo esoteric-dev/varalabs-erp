@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, redirect } from '@tanstack/react-router'
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { LogOut, Bell, Search, Settings, Plus, X, Trash2 } from 'lucide-react'
-import { fetchCurrentUser, fetchMyRoles, fetchMyPermissions } from '../lib/queries/user'
+import { fetchCurrentUser, fetchMyRoles, fetchMyPermissions, refreshAccessToken } from '../lib/queries/user'
 import { fetchTodos, createTodo, updateTodo, deleteTodo } from '../lib/queries/dashboard'
 import { fetchMyClasses, fetchMyStudents } from '../lib/queries/teacher'
 import { fetchMyStudent } from '../lib/queries/students'
@@ -17,6 +17,33 @@ export const Route = createFileRoute('/_authenticated')({
       // Redirect to welcome page on root domain, login on subdomains
       throw redirect({ to: context.orgSlug ? '/login' : '/welcome' })
     }
+
+    // If the URL carries an org slug that differs from what the current token
+    // was issued for, refresh the token so the JWT is scoped to the correct org.
+    // This handles: first visit after path-routing switch, navigating between orgs,
+    // and tenant_admin users whose old token had an empty org_id.
+    if (context.orgSlug) {
+      const lastSlug = sessionStorage.getItem('_orgSlugSynced')
+      if (lastSlug !== context.orgSlug) {
+        const rt = localStorage.getItem('refreshToken')
+        if (rt) {
+          try {
+            const tokens = await refreshAccessToken(rt, context.orgSlug)
+            localStorage.setItem('authToken', tokens.token)
+            localStorage.setItem('refreshToken', tokens.refreshToken)
+            localStorage.setItem('orgSlug', context.orgSlug)
+          } catch {
+            // Refresh failed — force re-login at the org URL
+            localStorage.removeItem('authToken')
+            localStorage.removeItem('refreshToken')
+            throw redirect({ to: '/login' })
+          }
+        }
+        // Mark as synced so we don't refresh on every navigation
+        sessionStorage.setItem('_orgSlugSynced', context.orgSlug)
+      }
+    }
+
     const currentUser = await context.queryClient.ensureQueryData({
       queryKey: ['currentUser'],
       queryFn: fetchCurrentUser,

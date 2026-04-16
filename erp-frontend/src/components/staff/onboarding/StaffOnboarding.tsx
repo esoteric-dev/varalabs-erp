@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { API_BASE } from '../../../lib/api-base'
 import { onboardStaff, previewLoginEmail } from '../../../lib/queries/org-users'
 import type { OnboardStaffInput, OnboardStaffResult } from '../../../lib/queries/org-users'
 import { resolveOrg } from '../../../lib/queries/user'
@@ -215,7 +216,7 @@ function StaffOnboardingForm() {
     setGeneratingPdf(true)
     try {
       // TODO: Implement offer letter generation
-      window.open(`/api/offer-letter/${result.user.id}`, '_blank')
+      window.open(`${API_BASE}/api/offer-letter/${result.user.id}`, '_blank')
     } catch (error) {
       console.error('Failed to generate offer letter:', error)
     } finally {

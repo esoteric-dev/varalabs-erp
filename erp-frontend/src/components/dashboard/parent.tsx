@@ -74,8 +74,7 @@ export function ParentDashboard({ tenantId }: ParentDashboardProps) {
         {children.map((child) => (
           <Link
             key={child.id}
-            to="/students/$studentId"
-            params={{ studentId: child.id }}
+            to="/my-students"
             className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md hover:border-gray-200 transition-all"
           >
             <div className="flex items-center gap-4 mb-4">

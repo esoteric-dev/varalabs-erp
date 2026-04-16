@@ -1,5 +1,6 @@
 import { gql } from 'graphql-request'
 import { gqlClient } from '../graphql-client'
+import { API_BASE } from '../api-base'
 
 export interface Student {
   id: string
@@ -97,6 +98,22 @@ export interface AddStudentInput {
   customData?: any
 }
 
+function normalizePhotoUrl(photoUrl?: string | null): string | undefined {
+  if (!photoUrl) return undefined
+  if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://') || photoUrl.startsWith('data:')) {
+    return photoUrl
+  }
+  const path = photoUrl.startsWith('/') ? photoUrl : `/${photoUrl}`
+  return API_BASE ? `${API_BASE}${path}` : path
+}
+
+function normalizeStudent(student: Student): Student {
+  return {
+    ...student,
+    photoUrl: normalizePhotoUrl(student.photoUrl),
+  }
+}
+
 const STUDENTS_QUERY = gql`
   query Students {
     students {
@@ -134,12 +151,12 @@ const STUDENT_QUERY = gql`
 
 export async function fetchStudents(): Promise<Student[]> {
   const data = await gqlClient.request<{ students: Student[] }>(STUDENTS_QUERY)
-  return data.students
+  return data.students.map(normalizeStudent)
 }
 
 export async function fetchStudent(id: string): Promise<Student | null> {
   const data = await gqlClient.request<{ student: Student | null }>(STUDENT_QUERY, { id })
-  return data.student
+  return data.student ? normalizeStudent(data.student) : null
 }
 
 const CREATE_STUDENT_MUTATION = gql`
@@ -174,7 +191,7 @@ const MY_STUDENT_QUERY = gql`
 
 export async function fetchMyStudent(): Promise<Student | null> {
   const data = await gqlClient.request<{ myStudent: Student | null }>(MY_STUDENT_QUERY)
-  return data.myStudent
+  return data.myStudent ? normalizeStudent(data.myStudent) : null
 }
 
 export async function createStudent(name: string, className: string): Promise<Student> {
@@ -182,7 +199,7 @@ export async function createStudent(name: string, className: string): Promise<St
     CREATE_STUDENT_MUTATION,
     { name, className },
   )
-  return data.createStudent
+  return normalizeStudent(data.createStudent)
 }
 
 export const GET_ONBOARDING_CONFIG = gql`
@@ -340,5 +357,5 @@ export async function updateStudent(
     UPDATE_STUDENT_MUTATION,
     { studentId, ...fields },
   )
-  return data.updateStudent
+  return normalizeStudent(data.updateStudent)
 }

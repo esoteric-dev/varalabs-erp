@@ -712,6 +712,85 @@ pub async fn offer_letter_compat_handler(
     .await
 }
 
+/// POST /api/offer-letter/{user_id}
+/// Body: { letter_type?, opening_paragraph?, terms?, additional_notes? }
+/// Generates a custom offer/joining letter PDF with optional overrides for
+/// the opening paragraph, terms list, and additional notes.
+pub async fn offer_letter_custom_handler(
+    Path(user_id): Path<String>,
+    Extension(pool): Extension<PgPool>,
+    user_ctx: Option<Extension<UserContext>>,
+    axum::Json(body): axum::Json<OfferLetterCustomBody>,
+) -> Response {
+    let ctx = match auth_check(&user_ctx) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+
+    let doc_type = if body.letter_type.as_deref() == Some("joining") {
+        "joining_letter"
+    } else {
+        "offer_letter"
+    };
+
+    // Load staff vars and org template (same as compat GET handler)
+    let html_template = match fetch_org_template(&pool, &ctx.tenant_id, &ctx.org_id, doc_type).await {
+        Ok(Some(html)) => html,
+        _ => match platform_template(doc_type) {
+            Some(t) => t.to_string(),
+            None => return (StatusCode::BAD_REQUEST, "Unknown document type").into_response(),
+        },
+    };
+
+    match fetch_staff_vars(&pool, &ctx.tenant_id, &ctx.org_id, &user_id).await {
+        Ok(Some(vars)) => {
+            let mut html = apply_staff_vars(&html_template, &vars);
+
+            // Apply custom overrides: replace placeholder tokens if the template
+            // contains them, or inject them before the signature block.
+            if let Some(ref para) = body.opening_paragraph {
+                if html.contains("{{OPENING_PARAGRAPH}}") {
+                    html = html.replace("{{OPENING_PARAGRAPH}}", &he(para));
+                }
+            }
+            if let Some(ref terms) = body.terms {
+                if html.contains("{{TERMS_LIST}}") {
+                    let items: String = terms
+                        .iter()
+                        .map(|t| format!("<li>{}</li>", he(t)))
+                        .collect();
+                    html = html.replace("{{TERMS_LIST}}", &items);
+                }
+            }
+            if let Some(ref notes) = body.additional_notes {
+                if html.contains("{{ADDITIONAL_NOTES}}") {
+                    html = html.replace("{{ADDITIONAL_NOTES}}", &he(notes));
+                }
+            }
+
+            let fname = format!(
+                "{}_{}.pdf",
+                vars.staff_name.replace(' ', "_").to_lowercase(),
+                doc_type,
+            );
+            html_to_pdf(&html, &fname)
+        }
+        Ok(None) => (StatusCode::NOT_FOUND, "User not found").into_response(),
+        Err(e) => {
+            tracing::error!("DB: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "Database error").into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct OfferLetterCustomBody {
+    pub letter_type: Option<String>,
+    pub opening_paragraph: Option<String>,
+    pub terms: Option<Vec<String>>,
+    pub additional_notes: Option<String>,
+}
+
 #[derive(Deserialize)]
 pub struct CompatQuery {
     pub letter_type: Option<String>,

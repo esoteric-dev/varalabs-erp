@@ -16,6 +16,11 @@ const firstSegment = window.location.pathname.split('/').filter(Boolean)[0] ?? '
 const orgSlug: string | null =
   firstSegment && !KNOWN_ROUTES.has(firstSegment) ? firstSegment : null
 
+// Persist the org slug so the graphql-client can send it during token refreshes
+if (orgSlug) {
+  localStorage.setItem('orgSlug', orgSlug)
+}
+
 // 2. Auth check
 const authStatus: 'authenticated' | 'unauthenticated' =
   localStorage.getItem('authToken') ? 'authenticated' : 'unauthenticated'
