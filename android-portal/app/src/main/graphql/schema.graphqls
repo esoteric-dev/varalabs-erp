@@ -1,0 +1,142 @@
+type Query {
+  me: User!
+  dashboard: Dashboard!
+  students(className: String): [Student!]!
+  student(id: ID!): Student
+  feeRecords(studentId: ID!): [FeeRecord!]!
+  attendanceRecords(studentId: ID, className: String, date: String, from: String!, to: String!): [AttendanceRecord!]!
+  notices: [Notice!]!
+  orgPlugins: [OrgPlugin!]!
+  myPayslips: [Payslip!]!
+}
+
+type Mutation {
+  markAttendance(date: String!, entries: [AttendanceEntryInput!]!): Boolean!
+  updateMyProfile(name: String, phone: String): User!
+}
+
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  phone: String
+  photoUrl: String
+  systemRole: String!
+}
+
+type Dashboard {
+  totalStudents: Int!
+  totalStaff: Int!
+  attendanceTodayPresent: Int!
+  attendanceTodayTotal: Int!
+  feesPending: Int!
+  feesCollected: Int!
+  pendingAdmissions: Int!
+  activeNotices: Int!
+}
+
+type Student {
+  id: ID!
+  name: String!
+  className: String!
+  gender: String
+  dateOfBirth: String
+  bloodGroup: String
+  religion: String
+  email: String
+  phone: String
+  admissionNumber: String
+  admissionDate: String
+  photoUrl: String
+  parents: StudentParents
+  addresses: [StudentAddress!]!
+  medicalHistory: StudentMedicalHistory
+}
+
+type StudentParents {
+  fatherName: String
+  fatherPhone: String
+  fatherOccupation: String
+  motherName: String
+  motherPhone: String
+  motherOccupation: String
+  guardianName: String
+  guardianPhone: String
+  guardianRelation: String
+  guardianEmail: String
+}
+
+type StudentAddress {
+  id: ID!
+  addressType: String!
+  address: String!
+  city: String
+  state: String
+  zipCode: String
+  country: String
+}
+
+type StudentMedicalHistory {
+  allergies: String
+  medications: String
+  pastConditions: String
+}
+
+type FeeRecord {
+  id: ID!
+  feeName: String!
+  amountDue: Int!
+  amountPaid: Int!
+  status: String!
+  dueDate: String!
+  paidDate: String
+  paymentMode: String
+}
+
+type AttendanceRecord {
+  id: ID!
+  studentId: String!
+  studentName: String!
+  date: String!
+  status: String!
+  remarks: String!
+}
+
+type Notice {
+  id: ID!
+  title: String!
+  body: String!
+  audience: String!
+  priority: String!
+  published: Boolean!
+  createdByName: String!
+  createdAt: String!
+  targetClasses: String
+}
+
+type OrgPlugin {
+  module: Module!
+  isActive: Boolean!
+}
+
+type Module {
+  code: String!
+  name: String!
+  isCore: Boolean!
+}
+
+type Payslip {
+  id: ID!
+  month: Int!
+  year: Int!
+  basicPay: Int!
+  allowances: Int!
+  deductions: Int!
+  netPay: Int!
+  status: String!
+}
+
+input AttendanceEntryInput {
+  studentId: String!
+  status: String!
+}

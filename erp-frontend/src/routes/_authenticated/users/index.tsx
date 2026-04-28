@@ -6,6 +6,7 @@ import { fetchOrgUsers, createUser, previewLoginEmail } from '../../../lib/queri
 import { fetchRoles, assignRoleToUser, removeRoleFromUser } from '../../../lib/queries/roles'
 import { fetchTeacherClassAssignments, assignClassToTeacher, removeClassFromTeacher } from '../../../lib/queries/teacher'
 import { resetUserPassword } from '../../../lib/queries/user'
+import { resolveOrg } from '../../../lib/queries/user'
 import { uploadUserPhoto } from '../../../lib/queries/uploads'
 import type { OrgUser, CreateUserResult } from '../../../lib/queries/org-users'
 import type { RoleWithPermissions } from '../../../lib/queries/roles'
@@ -14,18 +15,6 @@ import type { TeacherClass } from '../../../lib/queries/teacher'
 export const Route = createFileRoute('/_authenticated/users/')({
   component: UsersPage,
 })
-
-function getOrgIdFromToken(): string | null {
-  try {
-    const token = localStorage.getItem('authToken')
-    if (!token) return null
-    const payload = token.split('.')[1]
-    const decoded = JSON.parse(atob(payload))
-    return decoded.org_id || null
-  } catch {
-    return null
-  }
-}
 
 const roleColors: Record<string, string> = {
   superadmin: 'bg-red-50 text-red-700',
@@ -36,7 +25,13 @@ const roleColors: Record<string, string> = {
 function UsersPage() {
   const queryClient = useQueryClient()
   const { orgSlug } = Route.useRouteContext()
-  const orgId = getOrgIdFromToken()
+  const { data: orgInfo } = useQuery({
+    queryKey: ['resolveOrg', orgSlug],
+    queryFn: () => resolveOrg(orgSlug),
+    enabled: !!orgSlug,
+    staleTime: 10 * 60_000,
+  })
+  const orgId = orgInfo?.orgId ?? null
   const [showForm, setShowForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')

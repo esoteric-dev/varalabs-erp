@@ -3,17 +3,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Building2, Plus, X, Copy, Check, ExternalLink,
   ChevronDown, Globe, KeyRound, BarChart3, Trash2, RefreshCw,
-  CheckCircle2, AlertCircle,
+  CheckCircle2, AlertCircle, ArrowRight, School, Group, Badge, Store, Lightbulb,
 } from 'lucide-react'
 import {
   fetchOrganisations, createOrganisation,
   fetchCustomDomains, addCustomDomain, removeCustomDomain,
   fetchOrgAdminUser, resetOrgAdminPassword,
-  fetchOrgReportSummary,
+  fetchOrgReportSummary, fetchServices,
+  // updateOrganisationServices,
 } from '../../lib/queries/user'
 import type {
   Organisation, CreateOrgResponse, CustomDomain,
-  OrgReportSummary, CurrentUser,
+  OrgReportSummary, CurrentUser, Service,
 } from '../../lib/queries/user'
 
 type OrgTab = 'domains' | 'password' | 'analytics'
@@ -29,6 +30,11 @@ export function TenantAdminDashboard() {
   const [showForm, setShowForm] = useState(false)
   const [orgName, setOrgName] = useState('')
   const [orgSlug, setOrgSlug] = useState('')
+  const [orgType, setOrgType] = useState('school')
+  const [selectedServices, setSelectedServices] = useState<string[]>([
+    'students', 'staff', 'attendance', 'fees', 'notices'
+  ])
+  const [formStep, setFormStep] = useState(1)
   const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [expandedOrg, setExpandedOrg] = useState<string | null>(null)
@@ -39,14 +45,23 @@ export function TenantAdminDashboard() {
     queryFn: fetchOrganisations,
   })
 
+  const { data: availableServices = [] } = useQuery<Service[]>({
+    queryKey: ['services'],
+    queryFn: fetchServices,
+    enabled: showForm,
+  })
+
   const createOrgMutation = useMutation({
-    mutationFn: ({ name, slug }: { name: string; slug: string }) =>
-      createOrganisation(name, slug),
+    mutationFn: ({ name, slug, orgType, serviceCodes }: { name: string; slug: string; orgType: string; serviceCodes: string[] }) =>
+      createOrganisation(name, slug, orgType, serviceCodes),
     onSuccess: (data: CreateOrgResponse) => {
       queryClient.invalidateQueries({ queryKey: ['organisations'] })
       setCredentials({ email: data.adminEmail, password: data.adminPassword })
       setOrgName('')
       setOrgSlug('')
+      setOrgType('school')
+      setSelectedServices(['students', 'staff', 'attendance', 'fees', 'notices'])
+      setFormStep(1)
       setShowForm(false)
     },
   })
@@ -72,6 +87,14 @@ export function TenantAdminDashboard() {
     }
   }
 
+  const toggleService = (code: string) => {
+    setSelectedServices(prev => 
+      prev.includes(code) 
+        ? prev.filter(s => s !== code)
+        : [...prev, code]
+    )
+  }
+
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text)
     setCopiedField(field)
@@ -86,6 +109,14 @@ export function TenantAdminDashboard() {
       setActiveTab('domains')
     }
   }
+
+  const orgTypes = [
+    { value: 'school', label: 'School', icon: School, description: 'K-12 education' },
+    { value: 'college', label: 'College', icon: Group, description: 'Higher education' },
+    { value: 'coaching', label: 'Coaching', icon: Lightbulb, description: 'Test prep / tuitions' },
+    { value: 'company', label: 'Company', icon: Store, description: 'Management / corporate' },
+    { value: 'other', label: 'Other', icon: Badge, description: 'Other institution' },
+  ]
 
   return (
     <div>
@@ -121,94 +152,209 @@ export function TenantAdminDashboard() {
         />
       )}
 
-      {/* Create Org Form */}
+      {/* Create Org Form - Multi-step Onboarding */}
       {showForm && (
         <div className="bg-white rounded-xl border border-gray-100 p-5 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-800">
-              New Organisation
-            </h3>
+            <div className="flex items-center gap-3">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                formStep >= 1 ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-400'
+              }`}>1</div>
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                formStep >= 2 ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-400'
+              }`}>2</div>
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                formStep >= 3 ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-400'
+              }`}>3</div>
+            </div>
             <button
-              onClick={() => setShowForm(false)}
+              onClick={() => { setShowForm(false); setFormStep(1) }}
               className="text-gray-400 hover:text-gray-600"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (orgName && orgSlug && orgSlug.length >= 3) {
-                createOrgMutation.mutate({ name: orgName, slug: orgSlug })
-              }
-            }}
-            className="space-y-4"
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          {/* Step 1: Basic Info */}
+          {formStep === 1 && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (orgName && orgSlug && orgSlug.length >= 3) {
+                  setFormStep(2)
+                }
+              }}
+              className="space-y-4"
+            >
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Organisation Name
-                </label>
-                <input
-                  value={orgName}
-                  onChange={(e) => handleOrgNameChange(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                  placeholder="Greenwood International School"
-                />
+                <h3 className="text-base font-semibold text-gray-800 mb-4">
+                  Tell us about your institution
+                </h3>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  URL Slug
-                </label>
-                <div className="flex items-center">
-                  <span className="px-3 py-2 bg-gray-100 border border-r-0 border-gray-200 rounded-l-lg text-sm text-gray-500 whitespace-nowrap">
-                    varalabs.dev/
-                  </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    Institution Name
+                  </label>
                   <input
-                    value={orgSlug}
-                    onChange={(e) => handleSlugChange(e.target.value)}
+                    value={orgName}
+                    onChange={(e) => handleOrgNameChange(e.target.value)}
                     required
-                    className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                    placeholder="greenwood"
+                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    placeholder="Greenwood International School"
                   />
                 </div>
-                {orgSlug && orgSlug.length < 3 && (
-                  <p className="mt-1 text-xs text-red-500">
-                    Subdomain must be at least 3 characters
-                  </p>
-                )}
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    URL Slug
+                  </label>
+                  <div className="flex items-center">
+                    <span className="px-3 py-2.5 bg-gray-100 border border-r-0 border-gray-200 rounded-l-lg text-sm text-gray-500 whitespace-nowrap">
+                      varalabs.dev/
+                    </span>
+                    <input
+                      value={orgSlug}
+                      onChange={(e) => handleSlugChange(e.target.value)}
+                      required
+                      className="flex-1 px-3 py-2.5 text-sm border border-gray-200 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                      placeholder="greenwood"
+                    />
+                  </div>
+                  {orgSlug && orgSlug.length < 3 && (
+                    <p className="mt-1 text-xs text-red-500">
+                      Subdomain must be at least 3 characters
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={!orgName || orgSlug.length < 3}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
+                >
+                  Next <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Step 2: Institution Type */}
+          {formStep === 2 && (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-base font-semibold text-gray-800 mb-4">
+                  What type of institution is this?
+                </h3>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {orgTypes.map(({ value, label, icon: Icon, description }) => (
+                  <button
+                    key={value}
+                    onClick={() => setOrgType(value)}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      orgType === value
+                        ? 'border-teal-500 bg-teal-50'
+                        : 'border-gray-100 hover:border-gray-200'
+                    }`}
+                  >
+                    <Icon className={`w-6 h-6 mb-2 ${
+                      orgType === value ? 'text-teal-600' : 'text-gray-400'
+                    }`} />
+                    <div className={`text-sm font-semibold ${
+                      orgType === value ? 'text-teal-700' : 'text-gray-700'
+                    }`}>{label}</div>
+                    <div className="text-[11px] text-gray-400">{description}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-between">
+                <button
+                  type="button"
+                  onClick={() => setFormStep(1)}
+                  className="px-4 py-2.5 text-gray-500 text-sm font-medium hover:text-gray-700"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormStep(3)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors"
+                >
+                  Next <ArrowRight className="w-4 h-4" />
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="submit"
-                disabled={
-                  createOrgMutation.isPending ||
-                  !orgName ||
-                  orgSlug.length < 3
-                }
-                className="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
-              >
-                {createOrgMutation.isPending
-                  ? 'Creating...'
-                  : 'Create Organisation'}
-              </button>
-              {orgSlug && orgSlug.length >= 3 && (
-                <p className="text-xs text-gray-400">
-                  Admin credentials (
-                  <span className="font-medium text-teal-600">
-                    admin@{orgSlug}.com
-                  </span>
-                  ) will be generated automatically
+          )}
+
+          {/* Step 3: Select Services */}
+          {formStep === 3 && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                createOrgMutation.mutate({ 
+                  name: orgName, 
+                  slug: orgSlug, 
+                  orgType, 
+                  serviceCodes: selectedServices 
+                })
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <h3 className="text-base font-semibold text-gray-800 mb-1">
+                  Which services do you need?
+                </h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Select the modules you want to enable. You can change these later.
                 </p>
-              )}
-            </div>
-          </form>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {availableServices.map((service) => (
+                  <button
+                    key={service.id}
+                    type="button"
+                    onClick={() => toggleService(service.code)}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                      selectedServices.includes(service.code)
+                        ? 'border-teal-500 bg-teal-50'
+                        : 'border-gray-100 hover:border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm font-medium ${
+                        selectedServices.includes(service.code) ? 'text-teal-700' : 'text-gray-700'
+                      }`}>{service.name}</span>
+                      {selectedServices.includes(service.code) && (
+                        <CheckCircle2 className="w-4 h-4 text-teal-600" />
+                      )}
+                    </div>
+                    <div className="text-[11px] text-gray-400 mt-1">{service.category}</div>
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-between">
+                <button
+                  type="button"
+                  onClick={() => setFormStep(2)}
+                  className="px-4 py-2.5 text-gray-500 text-sm font-medium hover:text-gray-700"
+                >
+                  Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={createOrgMutation.isPending || selectedServices.length === 0}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50"
+                >
+                  {createOrgMutation.isPending ? 'Creating...' : 'Create Organisation'}
+                </button>
+              </div>
+            </form>
+          )}
+
           {createOrgMutation.isError && (
             <p className="mt-2 text-xs text-red-600">
-              {(createOrgMutation.error as Error).message ||
-                'Failed to create organisation'}
+              {(createOrgMutation.error as Error).message || 'Failed to create organisation'}
             </p>
           )}
         </div>

@@ -153,6 +153,7 @@ pub struct Organisation {
     pub address: Option<String>,
     pub phone: Option<String>,
     pub website: Option<String>,
+    pub org_type: Option<String>,
 }
 
 #[derive(Debug, SimpleObject, sqlx::FromRow, Clone)]
@@ -161,6 +162,36 @@ pub struct Permission {
     pub code: String,
     pub module: String,
     pub description: String,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct Service {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub category: String,
+    pub icon: Option<String>,
+    pub is_active: bool,
+}
+
+#[derive(Debug, SimpleObject, sqlx::FromRow)]
+pub struct ServiceWithStatus {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub category: String,
+    pub icon: Option<String>,
+    pub is_enabled: bool,
+}
+
+#[derive(Debug, InputObject)]
+pub struct CreateOrganisationInput {
+    pub name: String,
+    pub slug: String,
+    pub org_type: Option<String>,
+    pub service_codes: Option<Vec<String>>,
 }
 
 /// Org-scoped role. Permissions are resolved via a field resolver.
@@ -1283,7 +1314,7 @@ impl QueryRoot {
             Some(tid) => {
                 sqlx::query_as::<_, Organisation>(
                     "SELECT id::text, tenant_id::text, name, slug, created_at::text,
-                            logo_url, address, phone, website
+                            logo_url, address, phone, website, org_type
                      FROM organisations
                      WHERE tenant_id = $1::uuid
                      ORDER BY created_at",
@@ -1295,7 +1326,7 @@ impl QueryRoot {
             None => {
                 sqlx::query_as::<_, Organisation>(
                     "SELECT id::text, tenant_id::text, name, slug, created_at::text,
-                            logo_url, address, phone, website
+                            logo_url, address, phone, website, org_type
                      FROM organisations
                      ORDER BY created_at",
                 )
@@ -1305,6 +1336,55 @@ impl QueryRoot {
         }
         .map_err(|e| {
             tracing::error!("DB error fetching organisations: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        Ok(rows)
+    }
+
+    /// List all available services/modules that can be enabled.
+    async fn services(&self, ctx: &Context<'_>) -> Result<Vec<Service>> {
+        require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+
+        let rows = sqlx::query_as::<_, Service>(
+            "SELECT id::text, code, name, description, category, icon, is_active
+             FROM services WHERE is_active = true ORDER BY sort_order",
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching services: {e}");
+            async_graphql::Error::new("Internal server error")
+        })?;
+
+        Ok(rows)
+    }
+
+    /// List services for an organisation.
+    async fn organisation_services(
+        &self,
+        ctx: &Context<'_>,
+        organisation_id: String,
+    ) -> Result<Vec<ServiceWithStatus>> {
+        let user_ctx = require_auth(ctx)?;
+        let pool = ctx.data::<PgPool>()?;
+
+        verify_org_in_tenant(pool, &organisation_id, &user_ctx.tenant_id, &user_ctx.system_role).await?;
+
+        let rows = sqlx::query_as::<_, ServiceWithStatus>(
+            "SELECT s.id::text, s.code, s.name, s.description, s.category, s.icon,
+                    COALESCE(os.is_enabled, false) as is_enabled
+             FROM services s
+             LEFT JOIN organisation_services os ON os.service_id = s.id AND os.organisation_id = $1::uuid
+             WHERE s.is_active = true
+             ORDER BY s.sort_order",
+        )
+        .bind(&organisation_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error fetching organisation services: {e}");
             async_graphql::Error::new("Internal server error")
         })?;
 
@@ -1876,7 +1956,7 @@ impl QueryRoot {
             .map_err(|_| async_graphql::Error::new("Invalid org id"))?;
         let org = sqlx::query_as::<_, Organisation>(
             "SELECT id::text, tenant_id::text, name, slug, created_at::text,
-                    logo_url, address, phone, website
+                    logo_url, address, phone, website, org_type
                FROM organisations WHERE id = $1",
         )
         .bind(org_id)
@@ -4076,8 +4156,7 @@ impl MutationRoot {
     async fn create_organisation(
         &self,
         ctx: &Context<'_>,
-        name: String,
-        slug: String,
+        input: CreateOrganisationInput,
     ) -> Result<CreateOrgResponse> {
         let user_ctx = require_auth(ctx)?;
         let pool = ctx.data::<PgPool>()?;
@@ -4091,6 +4170,9 @@ impl MutationRoot {
                 }));
         }
 
+        let name = input.name;
+        let slug = input.slug;
+        let org_type = input.org_type.unwrap_or_else(|| "school".to_string());
         validate_slug(&slug)?;
         if slug.len() < 3 {
             return Err(async_graphql::Error::new(
@@ -4098,7 +4180,7 @@ impl MutationRoot {
             ));
         }
 
-        let tenant_uuid = uuid::Uuid::parse_str(&user_ctx.tenant_id)
+let tenant_uuid = uuid::Uuid::parse_str(&user_ctx.tenant_id)
             .map_err(|_| async_graphql::Error::new("Invalid tenant id"))?;
 
         // Generate admin credentials
@@ -4113,14 +4195,15 @@ impl MutationRoot {
         })?;
 
         let org = sqlx::query_as::<_, Organisation>(
-            "INSERT INTO organisations (tenant_id, name, slug)
-             VALUES ($1, $2, $3)
+            "INSERT INTO organisations (tenant_id, name, slug, org_type)
+             VALUES ($1, $2, $3, $4)
              RETURNING id::text, tenant_id::text, name, slug, created_at::text,
-                       logo_url, address, phone, website",
+                      logo_url, address, phone, website, org_type",
         )
         .bind(tenant_uuid)
         .bind(&name)
         .bind(&slug)
+        .bind(&org_type)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| match &e {
@@ -4278,8 +4361,28 @@ impl MutationRoot {
             .bind(admin_user_uuid)
             .execute(&mut *tx)
             .await
+.map_err(|e| {
+                    tracing::error!("DB error assigning admin role: {e}");
+                    async_graphql::Error::new("Internal server error")
+                })?;
+        }
+
+        // Enable services for the organisation
+        let service_codes = input.service_codes.unwrap_or_else(|| {
+            vec!["students".to_string(), "staff".to_string(), "attendance".to_string(), "fees".to_string(), "notices".to_string()]
+        });
+        for code in &service_codes {
+            sqlx::query(
+                "INSERT INTO organisation_services (organisation_id, service_id, is_enabled)
+                 SELECT $1, id, true FROM services WHERE code = $2
+                 ON CONFLICT (organisation_id, service_id) DO UPDATE SET is_enabled = true",
+            )
+            .bind(org_uuid)
+            .bind(code)
+            .execute(&mut *tx)
+            .await
             .map_err(|e| {
-                tracing::error!("DB error assigning admin role: {e}");
+                tracing::error!("DB error enabling service {}: {e}", code);
                 async_graphql::Error::new("Internal server error")
             })?;
         }
@@ -7252,7 +7355,7 @@ impl MutationRoot {
                     website  = COALESCE($5, website)
               WHERE id = $1
               RETURNING id::text, tenant_id::text, name, slug, created_at::text,
-                        logo_url, address, phone, website",
+                        logo_url, address, phone, website, org_type",
         )
         .bind(org_id)
         .bind(logo_url)

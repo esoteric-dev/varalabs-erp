@@ -147,6 +147,14 @@ function UserDetailPage() {
     .map((n: string) => n[0])
     .join('')
     .toUpperCase() || '?'
+  const orgAssignedRoles = user?.roleNames
+    ? user.roleNames.split(', ').map((role) => role.trim()).filter(Boolean)
+    : []
+  const assignedRoles = orgAssignedRoles.length > 0
+    ? orgAssignedRoles
+    : (user?.systemRole && user.systemRole !== 'user'
+      ? [user.systemRole.replace('_', ' ')]
+      : [])
 
   // ── Loading State ───────────────────────────────────────────────────
   if (loadingUser) {
@@ -503,6 +511,24 @@ function UserDetailPage() {
               </div>
             </div>
           )}
+
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Assigned Roles</h3>
+            {assignedRoles.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {assignedRoles.map((role) => (
+                  <span
+                    key={role}
+                    className="inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-full bg-teal-50 text-teal-700"
+                  >
+                    {role}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">No org roles assigned</p>
+            )}
+          </div>
 
           {/* Quick Actions Card */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">

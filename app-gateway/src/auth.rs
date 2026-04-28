@@ -280,5 +280,7 @@ pub fn require_permission_for_org(
 
 /// Check if the user has a permission (returns bool, no error).
 pub fn has_permission(user_ctx: &UserContext, permission: &str) -> bool {
-    user_ctx.system_role == SystemRole::Superadmin || user_ctx.permissions.contains(permission)
+    user_ctx.system_role == SystemRole::Superadmin
+        || user_ctx.system_role == SystemRole::TenantAdmin
+        || user_ctx.permissions.contains(permission)
 }

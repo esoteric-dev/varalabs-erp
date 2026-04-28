@@ -1,0 +1,164 @@
+query MobileMe {
+  me {
+    id
+    employeeId
+    name
+    email
+    phone
+    photoUrl
+    systemRole
+  }
+}
+
+query MobileDashboard {
+  dashboard {
+    totalStudents
+    totalStaff
+    attendanceTodayPresent
+    attendanceTodayTotal
+    feesPending
+    feesCollected
+    pendingAdmissions
+    activeNotices
+  }
+}
+
+query MobileStudents($className: String) {
+  students(className: $className) {
+    id
+    name
+    className
+    photoUrl
+    admissionNumber
+  }
+}
+
+query MobileStudentDetail($id: ID!) {
+  student(id: $id) {
+    id
+    name
+    className
+    gender
+    dateOfBirth
+    bloodGroup
+    religion
+    email
+    phone
+    admissionNumber
+    admissionDate
+    photoUrl
+    parents {
+      fatherName
+      fatherPhone
+      fatherOccupation
+      motherName
+      motherPhone
+      motherOccupation
+      guardianName
+      guardianPhone
+      guardianRelation
+      guardianEmail
+    }
+    addresses {
+      id
+      addressType
+      address
+      city
+      state
+      zipCode
+      country
+    }
+    medicalHistory {
+      allergies
+      medications
+      pastConditions
+    }
+  }
+}
+
+query MobileFeeRecords($studentId: ID!) {
+  feeRecords(studentId: $studentId) {
+    id
+    feeName
+    amountDue
+    amountPaid
+    status
+    dueDate
+    paidDate
+    paymentMode
+  }
+}
+
+query MobileStudentAttendance($studentId: ID, $from: String!, $to: String!) {
+  attendanceRecords(studentId: $studentId, from: $from, to: $to) {
+    id
+    studentId
+    studentName
+    date
+    status
+    remarks
+  }
+}
+
+query MobileClassAttendance($className: String, $date: String, $from: String!, $to: String!) {
+  attendanceRecords(className: $className, date: $date, from: $from, to: $to) {
+    id
+    studentId
+    studentName
+    date
+    status
+    remarks
+  }
+}
+
+query MobileNotices {
+  notices {
+    id
+    title
+    body
+    audience
+    priority
+    published
+    createdByName
+    createdAt
+    targetClasses
+  }
+}
+
+query MobileOrgPlugins {
+  orgPlugins {
+    module {
+      code
+      name
+      isCore
+    }
+    isActive
+  }
+}
+
+query MobileMyPayslips {
+  myPayslips {
+    id
+    month
+    year
+    basicPay
+    allowances
+    deductions
+    netPay
+    status
+  }
+}
+
+mutation MobileMarkAttendance($date: String!, $entries: [AttendanceEntryInput!]!) {
+  markAttendance(date: $date, entries: $entries)
+}
+
+mutation MobileUpdateProfile($name: String, $phone: String) {
+  updateMyProfile(name: $name, phone: $phone) {
+    id
+    name
+    email
+    phone
+    photoUrl
+  }
+}

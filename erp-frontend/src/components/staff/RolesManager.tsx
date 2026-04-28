@@ -2,15 +2,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Plus, X, Pencil, Trash2 } from 'lucide-react'
 import { fetchRoles, fetchAllPermissions, createRole, updateRole, deleteRole } from '../../lib/queries/roles'
+import { resolveOrg } from '../../lib/queries/user'
 import type { RoleWithPermissions } from '../../lib/queries/roles'
 
-function getOrgIdFromToken(): string | null {
+function getOrgSlugFromStorage(): string | null {
   try {
-    const token = localStorage.getItem('authToken')
-    if (!token) return null
-    const payload = token.split('.')[1]
-    const decoded = JSON.parse(atob(payload))
-    return decoded.org_id || null
+    return localStorage.getItem('orgSlug')
   } catch {
     return null
   }
@@ -18,7 +15,16 @@ function getOrgIdFromToken(): string | null {
 
 export function RolesManager() {
   const queryClient = useQueryClient()
-  const orgId = getOrgIdFromToken()
+  const orgSlug = getOrgSlugFromStorage()
+
+  const { data: orgInfo } = useQuery({
+    queryKey: ['resolveOrg', orgSlug],
+    queryFn: () => resolveOrg(orgSlug),
+    enabled: !!orgSlug,
+    staleTime: 10 * 60_000,
+  })
+
+  const orgId = orgInfo?.orgId ?? null
 
   const [showForm,         setShowForm]         = useState(false)
   const [editingRoleId,    setEditingRoleId]    = useState<string | null>(null)

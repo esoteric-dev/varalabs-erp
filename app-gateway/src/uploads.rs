@@ -8,7 +8,7 @@ use image::ImageReader;
 use sqlx::PgPool;
 use std::io::Cursor;
 
-use crate::auth::UserContext;
+use crate::auth::{SystemRole, UserContext};
 use crate::storage::{bucket_name, generate_presigned_url, uploads_serving_strategy};
 
 type UploadError = (StatusCode, axum::Json<serde_json::Value>);
@@ -246,6 +246,7 @@ pub async fn upload_org_logo(
         .0;
 
     if user_ctx.system_role != crate::auth::SystemRole::Superadmin
+        && user_ctx.system_role != crate::auth::SystemRole::TenantAdmin
         && !user_ctx.permissions.contains("settings.update")
     {
         return Err((
@@ -354,10 +355,10 @@ pub async fn upload_org_logo(
             .send()
             .await
             .map_err(|e| {
-                tracing::error!("S3 WebP upload failed: {e}");
+                tracing::error!("S3 WebP upload failed: {e:#}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    axum::Json(serde_json::json!({ "error": "Failed to save WebP image" })),
+                    axum::Json(serde_json::json!({ "error": "Failed to upload image — S3 storage may be unavailable" })),
                 )
             })?;
         format!("/uploads/{}", key)
@@ -397,7 +398,8 @@ pub async fn upload_org_logo(
     Ok(axum::Json(serde_json::json!({ "logoUrl": serving_url })))
 }
 
-/// Admin uploads a photo for any user. Requires users.manage permission.
+/// Admin uploads a photo for any user.
+/// Superadmin and tenant_admin may upload directly; other users require users.manage.
 pub async fn upload_user_photo(
     Extension(pool): Extension<PgPool>,
     user_ctx: Option<Extension<UserContext>>,
@@ -412,7 +414,9 @@ pub async fn upload_user_photo(
         )
     })?.0;
 
-    if user_ctx.system_role != crate::auth::SystemRole::Superadmin
+    if user_ctx.system_role != SystemRole::Superadmin
+        && user_ctx.system_role != SystemRole::TenantAdmin
+        && !user_ctx.role_slugs.iter().any(|slug| slug == "admin")
         && !user_ctx.permissions.contains("users.manage")
     {
         return Err((

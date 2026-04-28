@@ -57,6 +57,34 @@ export interface Organisation {
   name: string
   slug: string
   createdAt: string
+  orgType?: string
+}
+
+export interface Service {
+  id: string
+  code: string
+  name: string
+  description?: string
+  category: string
+  icon?: string
+  isActive: boolean
+}
+
+export interface ServiceWithStatus {
+  id: string
+  code: string
+  name: string
+  description?: string
+  category: string
+  icon?: string
+  isEnabled: boolean
+}
+
+export interface CreateOrganisationInput {
+  name: string
+  slug: string
+  orgType?: string
+  serviceCodes?: string[]
 }
 
 export interface OrgInfo {
@@ -158,14 +186,15 @@ export const REFRESH_TOKEN_MUTATION = gql`
 `
 
 export const CREATE_ORGANISATION_MUTATION = gql`
-  mutation CreateOrganisation($name: String!, $slug: String!) {
-    createOrganisation(name: $name, slug: $slug) {
+  mutation CreateOrganisation($input: CreateOrganisationInput!) {
+    createOrganisation(input: $input) {
       organisation {
         id
         tenantId
         name
         slug
         createdAt
+        orgType
       }
       adminEmail
       adminPassword
@@ -308,6 +337,65 @@ export const UPDATE_MY_PROFILE_MUTATION = gql`
   }
 `
 
+export const SERVICES_QUERY = gql`
+  query Services {
+    services {
+      id
+      code
+      name
+      description
+      category
+      icon
+      isActive
+    }
+  }
+`
+
+export const ORGANISATION_SERVICES_QUERY = gql`
+  query OrganisationServices($organisationId: String!) {
+    organisationServices(organisationId: $organisationId) {
+      id
+      code
+      name
+      description
+      category
+      icon
+      isEnabled
+    }
+  }
+`
+
+export const UPDATE_ORGANISATION_SERVICES_MUTATION = gql`
+  mutation UpdateOrganisationServices(
+    $organisationId: String!
+    $serviceCodes: [String!]!
+    $enabled: Boolean!
+  ) {
+    updateOrganisationServices(
+      organisationId: $organisationId
+      serviceCodes: $serviceCodes
+      enabled: $enabled
+    )
+  }
+`
+
+export const UPDATE_ORGANISATION_MUTATION = gql`
+  mutation UpdateOrganisation(
+    $id: String!
+    $name: String
+    $orgType: String
+  ) {
+    updateOrganisation(id: $id, name: $name, orgType: $orgType) {
+      id
+      tenantId
+      name
+      slug
+      createdAt
+      orgType
+    }
+  }
+`
+
 // --------------- Fetch Functions ---------------
 
 export async function fetchCurrentUser(): Promise<CurrentUser> {
@@ -358,10 +446,12 @@ export async function signupUser(
 export async function createOrganisation(
   name: string,
   slug: string,
+  orgType?: string,
+  serviceCodes?: string[],
 ): Promise<CreateOrgResponse> {
   const data = await gqlClient.request<{ createOrganisation: CreateOrgResponse }>(
     CREATE_ORGANISATION_MUTATION,
-    { name, slug },
+    { input: { name, slug, orgType, serviceCodes } },
   )
   return data.createOrganisation
 }
@@ -490,4 +580,41 @@ export async function uploadMyPhoto(blob: Blob): Promise<{ photoUrl: string; siz
   }
 
   return res.json()
+}
+
+export async function fetchServices(): Promise<Service[]> {
+  const data = await gqlClient.request<{ services: Service[] }>(SERVICES_QUERY)
+  return data.services
+}
+
+export async function fetchOrganisationServices(organisationId: string): Promise<ServiceWithStatus[]> {
+  const data = await gqlClient.request<{ organisationServices: ServiceWithStatus[] }>(
+    ORGANISATION_SERVICES_QUERY,
+    { organisationId },
+  )
+  return data.organisationServices
+}
+
+export async function updateOrganisationServices(
+  organisationId: string,
+  serviceCodes: string[],
+  enabled: boolean,
+): Promise<boolean> {
+  const data = await gqlClient.request<{ updateOrganisationServices: boolean }>(
+    UPDATE_ORGANISATION_SERVICES_MUTATION,
+    { organisationId, serviceCodes, enabled },
+  )
+  return data.updateOrganisationServices
+}
+
+export async function updateOrganisation(
+  id: string,
+  name?: string,
+  orgType?: string,
+): Promise<Organisation> {
+  const data = await gqlClient.request<{ updateOrganisation: Organisation }>(
+    UPDATE_ORGANISATION_MUTATION,
+    { id, name: name ?? null, orgType: orgType ?? null },
+  )
+  return data.updateOrganisation
 }
