@@ -9,21 +9,20 @@ User → Cloudflare (SSL/WAF)
        │
        ├── *.varalabs.dev ──→ Vercel Edge Network (React SPA)
        │
-       └── api.varalabs.dev ──→ Azure VM :8080 (Rust backend)
-                                    │
-                                    ├── app-gateway (Axum :8080)
-                                    └── minio (S3 storage :9000)
-                                    │
-                                    └── VNet → Azure PostgreSQL
+      └── api.varalabs.dev ──→ VPS :8080 (Rust backend)
+               │
+               ├── app-gateway (Axum :8080)
+               ├── postgres (PostgreSQL :5432)
+               └── minio (S3 storage :9000)
 ```
 
 ## Components
 
 | Service | Host | Port | Purpose |
 |---------|------|------|---------|
-| **app-gateway** | Azure VM | 8080 | Rust/Axum backend (GraphQL + REST) |
+| **app-gateway** | VPS | 8080 | Rust/Axum backend (GraphQL + REST) |
+| **postgres** | VPS | 5432 | PostgreSQL database with persistent volume |
 | **minio** | Azure VM | 9000/9001 | S3-compatible object storage |
-| **PostgreSQL** | Azure Flexible Server | 5432 | Database (external to VM) |
 | **Frontend** | Vercel | — | React SPA (deployed separately) |
 
 ## Backend Deployment (Azure VM)
@@ -31,7 +30,7 @@ User → Cloudflare (SSL/WAF)
 ### 1. Prerequisites
 
 - Docker + Docker Compose installed on the VM
-- PostgreSQL Flexible Server accessible from the VM
+- Docker Compose on the VPS
 - Cloudflare DNS configured with:
   - `api.varalabs.dev` A record → VM public IP
   - `*.varalabs.dev` CNAME → Vercel (handled separately)
@@ -42,7 +41,7 @@ Create a `.env` file in this directory:
 
 ```bash
 # ─── Database ─────────────────────────────────────────────────
-DATABASE_URL=postgres://<user>:<password>@<host>:5432/<dbname>?sslmode=require
+DATABASE_URL=postgres://erp_user:C6xCFfiauBsUriix@postgres:5432/erp
 
 # ─── Authentication ───────────────────────────────────────────
 JWT_SECRET=<a-long-random-secret>
@@ -111,6 +110,8 @@ docker compose up -d
 # Remove old unused images
 docker image prune -f
 ```
+
+The PostgreSQL data lives in the named Docker volume `erp-postgres-data`, so it survives container rebuilds and `docker compose up -d` restarts. Only removing the volume deletes the database files.
 
 ## MinIO Management
 
